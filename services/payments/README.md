@@ -27,7 +27,7 @@ npm run start:dev
 
 ```powershell
 curl.exe -i http://localhost:3004/health
-$key = 'entradasya-local-change-me' # Usa el valor de INTERNAL_API_KEY de tu .env.
+$key = 'dev-internal-key-cambiar' # Usa el valor de INTERNAL_API_KEY de tu .env.
 $orderId = [guid]::NewGuid().ToString()
 $payment = @{
   orderId = $orderId
@@ -40,6 +40,6 @@ $payment | curl.exe -i http://localhost:3004/payments -H "X-Internal-Key: $key" 
 curl.exe -i "http://localhost:3004/payments/order/$orderId" -H "X-Internal-Key: $key"
 ```
 
-El primer POST devuelve 201 y la repetición devuelve 200 con la misma transacción. La consulta devuelve 404 si la orden aún no tiene un pago. Si PostgreSQL no responde, `/health` devuelve 503.
+El primer POST devuelve 201 y la repetición con el mismo monto devuelve 200 con la misma transacción. Un monto menor a un centavo devuelve 400. Si la orden ya tiene un pago con otro monto, devuelve 409 con el código `IDEMPOTENCY_CONFLICT`. La consulta devuelve 404 si la orden aún no tiene un pago. Si PostgreSQL no responde, `/health` devuelve 503.
 
 `npm run build` compila y `npm run lint` ejecuta Oxlint.
