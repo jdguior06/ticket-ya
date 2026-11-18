@@ -8,8 +8,14 @@ Este repositorio es **EntradasYa v1**: 7 microservicios NestJS + 1 web React, co
 3. `docs/ASIGNACION.md` — qué servicio trabaja cada agente. **Solo modifica las carpetas que tienes asignadas.**
 
 ## Stack fijo (no cambiar sin aprobación de Diego)
-- Node.js 22 LTS, TypeScript estricto, **NestJS 11**.
-- ORM: **Prisma** (un `prisma/schema.prisma` por servicio, apuntando a su propia base).
+- Node.js 22 LTS, TypeScript estricto, **NestJS 12**. El proyecto es **ESM**: los imports relativos terminan en `.js` (`import { X } from './x.js'`), no existe `__dirname` (usar `import.meta.dirname`).
+- ORM: **Prisma 7.10** (no usar la 8, todavía es RC). Un `prisma/schema.prisma` por servicio, apuntando a su propia base. En Prisma 7:
+  - la URL va en `prisma.config.ts` (no en `schema.prisma`);
+  - generador `prisma-client` con `output = "../src/generated/prisma"`, `moduleFormat = "esm"`, `importFileExtension = "js"`;
+  - el cliente se crea con adaptador: `new PrismaClient({ adapter: new PrismaPg({ connectionString }) })`;
+  - se importa desde `../generated/prisma/client.js`. La carpeta `src/generated/` no se sube a git (`postinstall` la regenera).
+- Contraseñas: `bcryptjs` (JavaScript puro, sin compilación nativa en Windows ni en Docker).
+- Lint: `oxlint` (`npm run lint`). Tests: `vitest`.
 - Validación: `class-validator` + `class-transformer` con `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })`.
 - HTTP entre servicios: `fetch` nativo con `AbortSignal.timeout(HTTP_TIMEOUT_MS)`.
 - JWT: RS256. Solo **auth** firma (llave privada). Los demás validan con la llave pública (`JWT_PUBLIC_KEY_PATH`).
@@ -33,7 +39,9 @@ infra/                    # postgres, nginx (más adelante)
 scripts/                  # utilidades (llaves JWT, etc.)
 docs/
 ```
-La carpeta `src/common/` se **copia** entre servicios (no hay paquete compartido). El servicio de referencia es **auth**: copia su `common/` y adáptalo.
+La carpeta `src/common/` se **copia** entre servicios (no hay paquete compartido). El servicio de referencia es **auth**: copia su `common/`, `src/prisma/`, `main.ts`, `prisma.config.ts`, `package.json` (cambiando nombre y dependencias) y adapta. No modifiques el `common/` de auth para necesidades de otro servicio; adapta tu copia.
+
+Para crear un servicio nuevo: copiar `services/auth` sin `node_modules`, `dist`, `src/generated`, `src/users`, `prisma/migrations`, `prisma/seed.ts`, y luego `npm install`.
 
 ## Reglas obligatorias (requerimientos técnicos del proyecto)
 1. Toda configuración sale de variables de entorno (`@nestjs/config`, validadas al arrancar). Nada de puertos, URLs, contraseñas ni secretos en el código.
@@ -55,7 +63,8 @@ La carpeta `src/common/` se **copia** entre servicios (no hay paquete compartido
 
 ## Antes de terminar una tarea
 - `npm run build` y `npm run lint` sin errores en el servicio tocado.
-- Probar el `GET /health` y al menos un endpoint con `curl` (pon los comandos en el README).
+- Probar el `GET /health` (200 con BD arriba y 503 con BD caída) y los endpoints con `curl` (pon los comandos en el README).
+- Si cambias `schema.prisma`, crea la migración con `npx prisma migrate dev --name <descripcion>` y súbela (`prisma/migrations/`).
 - Resumen final: qué hiciste, archivos tocados, contratos cambiados (si hubo), pendientes.
 - **No hagas commit ni push** salvo que Diego lo pida. Trabaja en la rama indicada en `docs/ASIGNACION.md`.
 

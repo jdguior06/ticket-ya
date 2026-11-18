@@ -31,7 +31,7 @@
 
 ### 1.2 Chequeo de salud (todos los servicios)
 
-`GET /health` (público, sin token)
+`GET /health` — **público en todos los servicios**: sin token y sin `X-Internal-Key`, **también en payments y notifications** (es la única excepción a "todas las rutas exigen `X-Internal-Key`"). Esos dos servicios igual quedan protegidos porque el gateway no los expone. El gateway tampoco expone los `/health`; se consultan directo al puerto de cada servicio.
 
 - `200` → `{ "status": "ok", "service": "orders", "checks": { "db": "up" }, "uptimeSeconds": 120 }`
 - `503` → `{ "status": "error", "service": "orders", "checks": { "db": "down" } }`
@@ -65,7 +65,17 @@ Duración: `JWT_EXPIRES_IN` (por defecto `8h`).
 | PostgreSQL | 5432 | — | no | — |
 | Mailpit | 1025 (SMTP) / 8025 (web) | — | no | — |
 
-El gateway (Nginx, o el proxy de Vite en desarrollo) **quita** el prefijo `/api/<servicio>` y reenvía. Ejemplo: `GET /api/events/123` → `GET http://localhost:3002/events/123`. Las rutas `/internal/*` **nunca** se exponen por el gateway.
+El gateway (Nginx, o el proxy de Vite en desarrollo) elige el servicio por el segmento después de `/api` y **quita solo `/api`**; el nombre del servicio se mantiene, porque los controladores NestJS ya usan ese prefijo (`@Controller('events')`, `@Controller('auth')`, ...).
+
+| Petición pública | Se reenvía a |
+|---|---|
+| `GET /api/auth/me` | `GET http://localhost:3001/auth/me` |
+| `GET /api/events/123` | `GET http://localhost:3002/events/123` |
+| `POST /api/orders` | `POST http://localhost:3003/orders` |
+| `GET /api/tickets/abc/pdf` | `GET http://localhost:3005/tickets/abc/pdf` |
+| `POST /api/checkin/scan` | `POST http://localhost:3007/checkin/scan` |
+
+Como solo se reenvía `/api/<servicio>/...` → `/<servicio>/...`, las rutas `/internal/*` y `/health` **nunca** son alcanzables desde el gateway.
 
 > En las tablas de abajo, "Ruta" es la ruta **dentro del servicio**.
 
@@ -214,7 +224,16 @@ Objeto orden:
 Flujo (orden estricto):
 1. Crea la orden `PENDING`.
 2. events `POST /internal/reservations`. `SOLD_OUT` / `EVENT_NOT_AVAILABLE` → orden `CANCELLED`, responde `409` con ese `code`.
-3. payments `POST /payments`. `REJECTED` → events `release`, orden `REJECTED`, responde `402 PAYMENT_REJECTED`. Si payments no responde → `release`, orden `CANCELLED`, `503 DEPENDENCY_UNAVAILABLE`.
+3. payments `POST /payments`. `REJECTED` → events `release`, orden `REJECTED`, responde `402 PAYMENT_REJECTED`. `APPROVED` → paso 4.
+   **Si payments no responde (timeout o error de red) el resultado es desconocido**: payments pudo haber guardado la aprobación y perderse la respuesta. Por eso **nunca se libera el cupo sin confirmar**:
+   1. orders consulta `GET /payments/order/:orderId`. `APPROVED` → paso 4. `REJECTED` → como arriba. `404` → reintenta `POST /payments` (es idempotente por `orderId`, no puede cobrar dos veces). Máximo 2 reintentos, con esperas de 500 ms y 1000 ms.
+   2. Si aun así no hay respuesta: la orden **queda `PENDING` con el cupo reservado** y se responde `503 PAYMENT_PENDING` ("No pudimos confirmar el pago; revisa Mis compras en unos minutos").
+   3. **Reconciliador** de orders: cada `RECONCILE_INTERVAL_MS` (por defecto 60000) revisa órdenes `PENDING` con más de 30 s y consulta `GET /payments/order/:orderId`:
+      - `APPROVED` → `PAID` y continúa con los pasos 4 y 5;
+      - `REJECTED` → `release` y `REJECTED`;
+      - `404` y la orden tiene más de `PENDING_TIMEOUT_MS` (por defecto 600000 = 10 min) → `release` y `CANCELLED` con `failureCode: "PAYMENT_TIMEOUT"`;
+      - payments sigue sin responder → no se toca, se reintenta en la siguiente vuelta.
+   El reconciliador **solo consulta**, nunca reenvía el cobro (no tiene los datos de la tarjeta).
 4. Orden `PAID`. tickets `POST /internal/tickets/issue`. Si falla → `ticketsStatus = FAILED` (la orden **sigue pagada**).
 5. notifications `POST /notifications/order-confirmed`. Si falla → `notificationStatus = FAILED` (la compra **sigue siendo válida**).
 6. Responde `201` con la orden.
@@ -233,12 +252,12 @@ Flujo (orden estricto):
 
 ## 6. payments (3004) — interno
 
-Todas las rutas exigen `X-Internal-Key`.
+Todas las rutas exigen `X-Internal-Key`, excepto `GET /health`.
 
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/payments` | Procesa un cobro simulado. |
-| GET | `/payments/order/:orderId` | Consulta la transacción de una orden. |
+| GET | `/payments/order/:orderId` | Consulta la transacción de una orden: `200` con el mismo objeto que devuelve `POST /payments`, o `404 NOT_FOUND` si esa orden no tiene transacción. |
 
 **POST /payments** — idempotente por `orderId`: si la orden ya tiene transacción, devuelve **la misma** (`200`) sin cobrar de nuevo.
 ```json
@@ -312,7 +331,7 @@ tickets **no** sabe si la entrada ya se usó: eso lo controla checkin.
 
 ## 8. notifications (3006) — interno
 
-Todas las rutas exigen `X-Internal-Key`. Envía por SMTP a Mailpit. No guarda datos; solo logs.
+Todas las rutas exigen `X-Internal-Key`, excepto `GET /health`. Envía por SMTP a Mailpit. No guarda datos; solo logs.
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -378,3 +397,12 @@ Rutas de la interfaz:
 | `/portero` | DOORMAN | Elegir evento y escanear (cámara del teléfono o código a mano) |
 
 El token se guarda en `localStorage` y se envía en cada petición. El escáner usa la cámara trasera; en desarrollo Vite corre con HTTPS para que el teléfono permita la cámara.
+
+---
+
+## Historial de cambios
+
+| Fecha | Cambio | Pedido por |
+|---|---|---|
+| 2026-11-18 | v1 inicial. | Claude |
+| 2026-11-18 | §2: el gateway quita solo `/api` (con tabla de ejemplos). §1.2, §6 y §8: `/health` es público también en payments y notifications. §5 paso 3: un timeout de payments ya no libera el cupo; se reconcilia con `GET /payments/order/:orderId`, reintentos idempotentes y reconciliador periódico (`503 PAYMENT_PENDING`). §6: `GET /payments/order/:orderId` responde `404` si no hay transacción. | Revisión de Codex |
