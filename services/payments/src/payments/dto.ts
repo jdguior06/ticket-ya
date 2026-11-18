@@ -28,7 +28,7 @@ export class CreatePaymentDto {
   orderId!: string;
 
   @IsInt()
-  @Min(0)
+  @Min(1)
   @Max(2147483647)
   amountCents!: number;
 
