@@ -1,0 +1,22 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model CheckIn {
+  ticketId    String   @id @map("ticket_id") @db.Uuid
+  code        String
+  eventId     String   @db.Uuid
+  doormanId   String   @db.Uuid
+  holderName  String
+  sectorName  String
+  checkedInAt DateTime @default(now())
+
+  @@index([eventId, checkedInAt, ticketId])
+}
