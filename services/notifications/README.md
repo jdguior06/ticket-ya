@@ -29,7 +29,7 @@ npm run start:dev
 
 ```powershell
 curl.exe -i http://localhost:3006/health
-$key = 'entradasya-local-change-me' # Usa el valor de INTERNAL_API_KEY de tu .env.
+$key = 'dev-internal-key-cambiar' # Usa el valor de INTERNAL_API_KEY de tu .env.
 $orderId = [guid]::NewGuid().ToString()
 $notification = @{
   to = 'cliente@example.test'
@@ -46,6 +46,6 @@ $notification = @{
 $notification | curl.exe -i http://localhost:3006/notifications/order-confirmed -H "X-Internal-Key: $key" -H 'Content-Type: application/json' --data-binary '@-'
 ```
 
-La confirmación devuelve 202 con el identificador del mensaje. Si SMTP no responde, el envío y `/health` devuelven 503.
+La confirmación devuelve 202 con el identificador del mensaje. El correo muestra la fecha del evento en español y en la zona horaria de La Paz. Si SMTP no responde, el envío y `/health` devuelven 503.
 
 `npm run build` compila y `npm run lint` ejecuta Oxlint.

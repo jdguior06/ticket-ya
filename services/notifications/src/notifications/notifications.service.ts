@@ -4,6 +4,12 @@ import nodemailer from 'nodemailer';
 import { AppException } from '../common/errors/app-exception.js';
 import type { OrderConfirmedDto } from './dto.js';
 
+const eventDateFormatter = new Intl.DateTimeFormat('es-BO', {
+  dateStyle: 'long',
+  timeStyle: 'short',
+  timeZone: 'America/La_Paz',
+});
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger('Notifications');
@@ -29,6 +35,11 @@ export class NotificationsService {
   }
 
   async orderConfirmed(order: OrderConfirmedDto) {
+    const eventStartsAt = new Date(order.eventStartsAt);
+    if (Number.isNaN(eventStartsAt.getTime())) {
+      throw new AppException(400, 'VALIDATION_ERROR', 'La fecha del evento no es válida');
+    }
+
     const bolivianos = Math.floor(order.totalCents / 100);
     const centavos = String(order.totalCents % 100).padStart(2, '0');
     const text = [
@@ -36,7 +47,7 @@ export class NotificationsService {
       `Tu compra ${order.orderId} está confirmada.`,
       `Evento: ${order.eventName}`,
       `Lugar: ${order.venue}`,
-      `Fecha: ${order.eventStartsAt}`,
+      `Fecha: ${eventDateFormatter.format(eventStartsAt)}`,
       `Sector: ${order.sectorName}`,
       `Entradas: ${order.quantity}`,
       `Total: Bs ${bolivianos}.${centavos}`,
@@ -52,8 +63,10 @@ export class NotificationsService {
       });
       this.logger.log(`Confirmación enviada para la orden ${order.orderId}`);
       return { status: 'SENT', messageId: result.messageId };
-    } catch {
-      this.logger.warn(`SMTP no disponible para la orden ${order.orderId}`);
+    } catch (err) {
+      this.logger.warn(`SMTP no disponible para la orden ${order.orderId}`, {
+        message: err instanceof Error ? err.message : String(err),
+      });
       throw new AppException(503, 'DEPENDENCY_UNAVAILABLE', 'No se pudo enviar el correo');
     }
   }
