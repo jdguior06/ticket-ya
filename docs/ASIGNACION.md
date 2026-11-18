@@ -10,8 +10,8 @@ Cada agente modifica **solo** sus carpetas. `docs/CONTRATOS.md` lo puede tocar c
 | services/payments | Codex | `fix/payments` | hecho; correcciones de revisión pendientes |
 | services/notifications | Codex | `fix/notifications` | hecho; correcciones de revisión pendientes |
 | services/tickets | Claude | `feat/tickets` | hecho, probado (falta tu migración inicial) |
-| services/orders | por definir | `feat/orders` | pendiente |
-| services/checkin | por definir | `feat/checkin` | pendiente |
+| services/orders | Claude | `feat/orders` | hecho, probado con los 6 servicios (falta tu migración inicial) |
+| services/checkin | Codex (propuesto) | `feat/checkin` | pendiente |
 | web | por definir | `feat/web` | pendiente |
 
 Revisión cruzada: lo que hace Codex lo revisa Claude y viceversa, antes de que Diego lo una a `main`.

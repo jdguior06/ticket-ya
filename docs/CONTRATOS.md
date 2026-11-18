@@ -242,6 +242,15 @@ Flujo (orden estricto):
 5. notifications `POST /notifications/order-confirmed`. Si falla → `notificationStatus = FAILED` (la compra **sigue siendo válida**).
 6. Responde `201` con la orden.
 
+Detalles de la implementación:
+- **Idempotency-Key** (header opcional): de 8 a 100 caracteres `[A-Za-z0-9_-]`. Si el mismo cliente repite la clave → `200` con la misma orden, sin reservar ni cobrar de nuevo.
+- Los datos de tarjeta se validan en orders (`400` **sin crear orden**) antes de reservar.
+- Si events no responde al reservar → orden `CANCELLED` (`failureCode: EVENTS_UNAVAILABLE`), se intenta liberar y responde `503 DEPENDENCY_UNAVAILABLE`. Una liberación que falla queda marcada y la reintenta el reconciliador.
+- El correo se envía **solo después de emitir las entradas** (el enlace debe funcionar). El reconciliador reintenta las entradas `FAILED` y los correos `FAILED` (máximo 5 intentos de correo).
+- `POST /orders/:id/retry-tickets`: `409 INVALID_STATUS` si la orden no está `PAID`; `503 DEPENDENCY_UNAVAILABLE` si tickets sigue caído.
+- Todos los errores de `POST /orders` incluyen `details.orderId` y `details.order` (estado actual). `402` incluye además `details.reason`.
+- El objeto orden incluye `paidAt`. En el reporte, cada sector trae también `paidOrders`.
+
 **GET /orders/reports/events/:eventId** — orders consulta `GET /internal/events/:id` para verificar que `organizerId` coincide con el token.
 ```json
 {
@@ -419,3 +428,4 @@ El token se guarda en `localStorage` y se envía en cada petición. El escáner 
 | 2026-11-18 | §4: semántica de `PATCH /events/:id` (lista completa de sectores) y códigos de error de gestión de eventos. | Claude (implementación de events) |
 | 2026-11-18 | §1: `INTERNAL_API_KEY` es una sola clave compartida. §6: `amountCents ≥ 1` y `409 IDEMPOTENCY_CONFLICT` si se repite un `orderId` con otro monto. | Claude (revisión de payments) |
 | 2026-11-18 | §7: `409 IDEMPOTENCY_CONFLICT` en la emisión, normalización del código en la validación y chequeo de la carpeta en `/health`. | Claude (implementación de tickets) |
+| 2026-11-18 | §5: detalles de orders (Idempotency-Key, validación previa de tarjeta, events caído, correo después de las entradas, reintentos del reconciliador, `details.order` en errores, `paidAt`). | Claude (implementación de orders) |

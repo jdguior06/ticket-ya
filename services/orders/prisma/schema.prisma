@@ -1,0 +1,74 @@
+// Base de datos de orders (orders_db). Solo este servicio la usa.
+// Los datos del evento se copian desde la respuesta de la reserva (no se lee la BD de events).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+enum TicketsStatus {
+  NOT_ISSUED
+  ISSUED
+  FAILED
+}
+
+enum NotificationStatus {
+  NOT_SENT
+  SENT
+  FAILED
+}
+
+model Order {
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @map("user_id") @db.Uuid
+  customerName       String             @map("customer_name") @db.VarChar(100)
+  customerEmail      String             @map("customer_email") @db.VarChar(150)
+  // Header Idempotency-Key opcional: el mismo cliente con la misma clave recibe la misma orden.
+  idempotencyKey     String?            @map("idempotency_key") @db.VarChar(100)
+  status             OrderStatus        @default(PENDING)
+
+  eventId            String             @map("event_id") @db.Uuid
+  sectorId           String             @map("sector_id") @db.Uuid
+  quantity           Int
+
+  // Se llenan cuando events confirma la reserva.
+  reserved           Boolean            @default(false)
+  organizerId        String?            @map("organizer_id") @db.Uuid
+  eventName          String?            @map("event_name") @db.VarChar(150)
+  eventStartsAt      DateTime?          @map("event_starts_at")
+  venue              String?            @db.VarChar(150)
+  sectorName         String?            @map("sector_name") @db.VarChar(50)
+  unitPriceCents     Int?               @map("unit_price_cents")
+  totalCents         Int?               @map("total_cents")
+
+  failureCode        String?            @map("failure_code") @db.VarChar(50)
+  // true = hay que devolver el cupo a events y todavía no se pudo (lo reintenta el reconciliador).
+  releasePending     Boolean            @default(false) @map("release_pending")
+
+  ticketsStatus      TicketsStatus      @default(NOT_ISSUED) @map("tickets_status")
+  notificationStatus NotificationStatus @default(NOT_SENT) @map("notification_status")
+  notificationTries  Int                @default(0) @map("notification_tries")
+
+  paidAt             DateTime?          @map("paid_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([eventId, status])
+  @@index([status, updatedAt])
+  @@map("orders")
+}
