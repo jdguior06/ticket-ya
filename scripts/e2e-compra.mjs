@@ -1,8 +1,8 @@
 // Prueba de punta a punta del flujo de compra de EntradasYa.
-// Requiere los 6 servicios levantados (auth, events, orders, payments, tickets, notifications),
+// Requiere los 7 servicios levantados (auth, events, orders, payments, tickets, notifications, checkin),
 // el seed de auth y Mailpit. Uso (desde la raíz del repo):  node scripts/e2e-compra.mjs
 //
-// Variables opcionales: AUTH_URL, EVENTS_URL, ORDERS_URL, TICKETS_URL, MAILPIT_URL (http://localhost:8025)
+// Variables opcionales: AUTH_URL, EVENTS_URL, ORDERS_URL, TICKETS_URL, CHECKIN_URL, MAILPIT_URL (http://localhost:8025)
 import { randomUUID } from 'node:crypto';
 
 const URL = {
@@ -10,6 +10,7 @@ const URL = {
   events: process.env.EVENTS_URL ?? 'http://localhost:3002',
   orders: process.env.ORDERS_URL ?? 'http://localhost:3003',
   tickets: process.env.TICKETS_URL ?? 'http://localhost:3005',
+  checkin: process.env.CHECKIN_URL ?? 'http://localhost:3007',
 };
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://localhost:8025';
 let fails = 0;
@@ -44,7 +45,7 @@ for (const [name, base] of Object.entries(all)) {
     process.exit(1);
   }
 }
-console.log('Los 6 servicios responden.\n');
+console.log('Los 7 servicios responden.\n');
 
 // --- 1. organizador crea y publica un evento
 const org = await req('POST', `${URL.auth}/auth/login`, { email: 'organizador@entradasya.local', password: 'Organizador123' });
@@ -92,6 +93,7 @@ check('General disponible 3 -> 1', (await available(general.id)) === 1);
 
 r = await req('GET', `${URL.tickets}/tickets/order/${order1.id}`, null, bearer(cli));
 check('tickets: 2 entradas con código', r.status === 200 && r.body.length === 2 && r.body.every((t) => t.code.startsWith('EY-')), r.body);
+const myTickets = r.body ?? [];
 const pdf = r.body?.[0] ? await req('GET', `${URL.tickets}/tickets/${r.body[0].id}/pdf`, null, bearer(cli)) : {};
 check('descarga del PDF', pdf.status === 200 && pdf.pdf?.subarray(0, 5).toString() === '%PDF-');
 
@@ -135,7 +137,39 @@ check('reporte: 2 órdenes pagadas, 3 entradas, Bs 300, 1 rechazada',
 r = await req('GET', `${URL.orders}/orders/reports/events/${event.id}`, null, bearer(cli));
 check('cliente no ve reportes (403)', r.status === 403, r.body);
 
-// --- 10. correo en Mailpit (si está disponible su API)
+// --- 10. ingreso al evento (checkin)
+const doormanEmail = `portero${tag}@prueba.local`;
+await req('POST', `${URL.auth}/auth/users`, { name: 'Portero E2E', email: doormanEmail, password: 'Portero123', role: 'DOORMAN' }, bearer(orgToken));
+const doorman = (await req('POST', `${URL.auth}/auth/login`, { email: doormanEmail, password: 'Portero123' })).body.accessToken;
+const scan = (code, eventId = event.id, token = doorman) => req('POST', `${URL.checkin}/checkin/scan`, { code, eventId }, bearer(token));
+const [t1, t2] = myTickets;
+
+r = await scan(t1.code);
+check('portero escanea entrada válida -> ingreso permitido', r.status === 200 && r.body.allowed === true && r.body.ticket?.holderName === 'Cliente E2E', r.body);
+r = await scan(t1.code);
+check('SEGUNDO escaneo del mismo código -> rechazado ALREADY_USED', r.body.allowed === false && r.body.reason === 'ALREADY_USED', r.body);
+check('el rechazo informa la hora del primer ingreso', !!r.body.firstCheckedInAt, r.body);
+r = await scan(` ${t2.code.toLowerCase()} `);
+check('código escrito a mano (minúsculas y espacios) -> permitido', r.body.allowed === true, r.body);
+// Entrada nueva (la de la compra con Idempotency-Key) escaneada por 5 puertas a la vez: entra UNA sola.
+const t3 = (await req('GET', `${URL.tickets}/tickets/order/${a.body.id}`, null, bearer(cli))).body?.[0];
+const par = await Promise.all(Array.from({ length: 5 }, () => scan(t3.code)));
+const allowed = par.filter((x) => x.body.allowed === true).length;
+const used = par.filter((x) => x.body.reason === 'ALREADY_USED').length;
+check(`5 escaneos SIMULTÁNEOS de una entrada nueva -> 1 permitido y 4 ALREADY_USED (${allowed} y ${used})`, allowed === 1 && used === 4, par.map((x) => x.body));
+r = await scan('EY-AAAA-BBBB-CCCC');
+check('código inexistente -> INVALID_CODE', r.body.allowed === false && r.body.reason === 'INVALID_CODE', r.body);
+const otherEvent = (await req('GET', `${URL.events}/events`)).body.find((e) => e.id !== event.id);
+if (otherEvent) {
+  r = await scan(t1.code, otherEvent.id);
+  check('entrada de otro evento -> WRONG_EVENT', r.body.allowed === false && r.body.reason === 'WRONG_EVENT', r.body);
+}
+r = await scan(t1.code, event.id, cli);
+check('un cliente no puede registrar ingresos (403)', r.status === 403, r.body);
+r = await req('GET', `${URL.checkin}/checkin/events/${event.id}/stats`, null, bearer(orgToken));
+check('organizador ve 3 ingresos', r.status === 200 && r.body.totalCheckedIn === 3, r.body);
+
+// --- 11. correo en Mailpit (si está disponible su API)
 try {
   const m = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`, { signal: AbortSignal.timeout(2000) });
   const data = await m.json();

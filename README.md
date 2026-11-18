@@ -19,7 +19,7 @@ services/
   payments/       3004  pagos simulados (interno)
   tickets/        3005  entradas, PDF y QR
   notifications/  3006  correos vía Mailpit (interno)
-  checkin/        3007  ingreso al evento
+  checkin/        3007  ingreso al evento (lectura única del QR)
 web/              5173  interfaz para cliente, organizador y portero
 infra/postgres/         script de bases y usuarios
 scripts/                utilidades (llaves JWT)
