@@ -1,0 +1,234 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { AppException } from '../common/errors/app-exception.js';
+import type { AuthUser } from '../common/auth/auth.types.js';
+import { Prisma } from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import type { CreateEventDto, ListEventsQuery, SectorInputDto, UpdateEventDto } from './dto.js';
+import { toEventResponse, type EventWithSectors } from './events.mapper.js';
+
+const LIST_LIMIT = 100;
+
+function assertUniqueSectorNames(sectors: SectorInputDto[]): void {
+  const names = sectors.map((s) => s.name.toLowerCase());
+  if (new Set(names).size !== names.length) {
+    throw new AppException(400, 'VALIDATION_ERROR', 'Los sectores no pueden repetir nombre', {
+      fields: { sectors: ['Nombres de sector repetidos'] },
+    });
+  }
+}
+
+function parseFutureDate(value: string): Date {
+  const date = new Date(value);
+  if (date.getTime() <= Date.now()) {
+    throw new AppException(400, 'VALIDATION_ERROR', 'La fecha del evento debe ser futura', {
+      fields: { startsAt: ['Debe ser una fecha futura'] },
+    });
+  }
+  return date;
+}
+
+@Injectable()
+export class EventsService {
+  private readonly logger = new Logger('Events');
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ---------- Lectura ----------
+
+  async listPublished(query: ListEventsQuery) {
+    const from = query.from ? new Date(query.from) : new Date();
+    const where: Prisma.EventWhereInput = {
+      status: 'PUBLISHED',
+      startsAt: { gte: from > new Date() ? from : new Date() },
+    };
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { venue: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+    const events = await this.prisma.event.findMany({
+      where,
+      include: { sectors: true },
+      orderBy: { startsAt: 'asc' },
+      take: LIST_LIMIT,
+    });
+    return events.map(toEventResponse);
+  }
+
+  async listMine(user: AuthUser) {
+    const events = await this.prisma.event.findMany({
+      where: { organizerId: user.id },
+      include: { sectors: true },
+      orderBy: { startsAt: 'desc' },
+    });
+    return events.map(toEventResponse);
+  }
+
+  /** Detalle público: si no está publicado, solo lo ve su organizador. */
+  async getPublic(id: string, user?: AuthUser) {
+    const event = await this.findOrFail(id);
+    if (event.status !== 'PUBLISHED' && event.organizerId !== user?.id) {
+      throw new AppException(404, 'NOT_FOUND', 'Evento no encontrado');
+    }
+    return toEventResponse(event);
+  }
+
+  /** Para otros servicios (/internal): cualquier estado. */
+  async getInternal(id: string) {
+    return toEventResponse(await this.findOrFail(id));
+  }
+
+  // ---------- Escritura (organizador) ----------
+
+  async create(user: AuthUser, dto: CreateEventDto) {
+    assertUniqueSectorNames(dto.sectors);
+    const startsAt = parseFutureDate(dto.startsAt);
+
+    const event = await this.prisma.event.create({
+      data: {
+        organizerId: user.id,
+        name: dto.name,
+        description: dto.description ?? '',
+        venue: dto.venue,
+        startsAt,
+        imageUrl: dto.imageUrl ?? null,
+        sectors: {
+          create: dto.sectors.map((s) => ({
+            name: s.name,
+            priceCents: s.priceCents,
+            capacity: s.capacity,
+            available: s.capacity,
+          })),
+        },
+      },
+      include: { sectors: true },
+    });
+    this.logger.log(`Evento creado id=${event.id} organizer=${user.id}`);
+    return toEventResponse(event);
+  }
+
+  async update(user: AuthUser, id: string, dto: UpdateEventDto) {
+    const current = await this.findOwnedOrFail(user, id);
+    if (current.status === 'CANCELLED') {
+      throw new AppException(409, 'EVENT_NOT_EDITABLE', 'Un evento cancelado no se puede editar');
+    }
+    if (dto.sectors) assertUniqueSectorNames(dto.sectors);
+    const startsAt = dto.startsAt ? parseFutureDate(dto.startsAt) : undefined;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.event.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          description: dto.description,
+          venue: dto.venue,
+          startsAt,
+          imageUrl: dto.imageUrl,
+        },
+      });
+
+      if (!dto.sectors) return;
+
+      const existingIds = new Set(current.sectors.map((s) => s.id));
+      const keepIds = new Set(dto.sectors.filter((s) => s.id).map((s) => s.id as string));
+
+      for (const id of keepIds) {
+        if (!existingIds.has(id)) {
+          throw new AppException(404, 'NOT_FOUND', `El sector ${id} no pertenece a este evento`);
+        }
+      }
+
+      // 1) Eliminar sectores que ya no vienen (solo si nunca tuvieron reservas).
+      for (const sector of current.sectors.filter((s) => !keepIds.has(s.id))) {
+        const reservations = await tx.reservation.count({ where: { sectorId: sector.id } });
+        if (reservations > 0) {
+          throw new AppException(409, 'SECTOR_HAS_SALES', `El sector "${sector.name}" tiene ventas y no se puede eliminar`);
+        }
+        await tx.sector.delete({ where: { id: sector.id } });
+      }
+
+      // 2) Actualizar o crear.
+      for (const input of dto.sectors) {
+        if (!input.id) {
+          await tx.sector.create({
+            data: {
+              eventId: id,
+              name: input.name,
+              priceCents: input.priceCents,
+              capacity: input.capacity,
+              available: input.capacity,
+            },
+          });
+          continue;
+        }
+        // Cambio de cupo atómico: el disponible se ajusta por la diferencia y
+        // nunca se baja el cupo por debajo de lo vendido (capacity - available).
+        const changed = await tx.$executeRaw`
+          UPDATE sectors
+             SET name = ${input.name},
+                 price_cents = ${input.priceCents},
+                 available = available + (${input.capacity} - capacity),
+                 capacity = ${input.capacity},
+                 updated_at = NOW()
+           WHERE id = ${input.id}::uuid
+             AND (capacity - available) <= ${input.capacity}`;
+        if (changed === 0) {
+          throw new AppException(409, 'CAPACITY_BELOW_SOLD', `El cupo de "${input.name}" no puede ser menor a lo ya vendido`);
+        }
+      }
+    });
+
+    this.logger.log(`Evento actualizado id=${id}`);
+    return toEventResponse(await this.findOrFail(id));
+  }
+
+  async publish(user: AuthUser, id: string) {
+    const event = await this.findOwnedOrFail(user, id);
+    if (event.status !== 'DRAFT') {
+      throw new AppException(409, 'INVALID_STATUS', 'Solo se puede publicar un evento en borrador');
+    }
+    if (event.sectors.length === 0) {
+      throw new AppException(409, 'NO_SECTORS', 'El evento necesita al menos un sector');
+    }
+    if (event.startsAt.getTime() <= Date.now()) {
+      throw new AppException(409, 'EVENT_IN_PAST', 'No se puede publicar un evento con fecha pasada');
+    }
+    const updated = await this.prisma.event.update({
+      where: { id },
+      data: { status: 'PUBLISHED' },
+      include: { sectors: true },
+    });
+    this.logger.log(`Evento publicado id=${id}`);
+    return toEventResponse(updated);
+  }
+
+  async cancel(user: AuthUser, id: string) {
+    const event = await this.findOwnedOrFail(user, id);
+    if (event.status === 'CANCELLED') return toEventResponse(event);
+    const updated = await this.prisma.event.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+      include: { sectors: true },
+    });
+    this.logger.log(`Evento cancelado id=${id}`);
+    return toEventResponse(updated);
+  }
+
+  // ---------- Auxiliares ----------
+
+  private async findOrFail(id: string): Promise<EventWithSectors> {
+    const event = await this.prisma.event.findUnique({ where: { id }, include: { sectors: true } });
+    if (!event) throw new AppException(404, 'NOT_FOUND', 'Evento no encontrado');
+    return event;
+  }
+
+  private async findOwnedOrFail(user: AuthUser, id: string): Promise<EventWithSectors> {
+    const event = await this.findOrFail(id);
+    if (event.organizerId !== user.id) {
+      // 404 y no 403: no revelamos eventos de otros organizadores.
+      throw new AppException(404, 'NOT_FOUND', 'Evento no encontrado');
+    }
+    return event;
+  }
+}

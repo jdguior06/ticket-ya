@@ -6,7 +6,7 @@ Cada agente modifica **solo** sus carpetas. `docs/CONTRATOS.md` lo puede tocar c
 |---|---|---|---|
 | Base del repo, contratos, infra | Claude | `main` | hecho |
 | services/auth (referencia) | Claude | `feat/auth` | hecho, probado (falta tu migración inicial) |
-| services/events | Claude | `feat/events` | pendiente |
+| services/events | Claude | `feat/events` | hecho, probado (falta tu migración inicial) |
 | services/payments | Codex | `feat/payments` | pendiente (después de auth) |
 | services/notifications | Codex | `feat/notifications` | pendiente (después de auth) |
 | services/tickets | por definir | `feat/tickets` | pendiente |

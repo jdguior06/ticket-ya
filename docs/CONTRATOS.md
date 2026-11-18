@@ -163,6 +163,10 @@ Objeto evento:
 }
 ```
 
+**PATCH /events/:id** — todos los campos opcionales. `sectors` es la **lista completa**: con `id` → se actualiza; sin `id` → se crea; los que no vienen → se eliminan (solo si nunca tuvieron reservas).
+
+Errores de gestión de eventos: `409 EVENT_NOT_EDITABLE` (cancelado), `409 SECTOR_HAS_SALES` (eliminar sector con reservas), `409 CAPACITY_BELOW_SOLD` (cupo menor a lo vendido), `409 INVALID_STATUS` (publicar algo que no es borrador), `409 NO_SECTORS`, `409 EVENT_IN_PAST`. Un evento de otro organizador responde `404` (no se revela que existe).
+
 **POST /internal/reservations** — idempotente por `orderId` (si ya existe, devuelve la misma reserva con `200`).
 ```json
 // request
@@ -406,3 +410,4 @@ El token se guarda en `localStorage` y se envía en cada petición. El escáner 
 |---|---|---|
 | 2026-11-18 | v1 inicial. | Claude |
 | 2026-11-18 | §2: el gateway quita solo `/api` (con tabla de ejemplos). §1.2, §6 y §8: `/health` es público también en payments y notifications. §5 paso 3: un timeout de payments ya no libera el cupo; se reconcilia con `GET /payments/order/:orderId`, reintentos idempotentes y reconciliador periódico (`503 PAYMENT_PENDING`). §6: `GET /payments/order/:orderId` responde `404` si no hay transacción. | Revisión de Codex |
+| 2026-11-18 | §4: semántica de `PATCH /events/:id` (lista completa de sectores) y códigos de error de gestión de eventos. | Claude (implementación de events) |
