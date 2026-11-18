@@ -1,0 +1,45 @@
+// Base de datos de tickets (tickets_db). Solo este servicio la usa.
+// Los datos del evento se copian al emitir la entrada (no se lee la BD de events).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TicketStatus {
+  VALID
+  VOID
+}
+
+model Ticket {
+  id            String       @id @default(uuid()) @db.Uuid
+  // Código único que va en el QR. Ej: EY-7KQ2-M9XD-4TPA
+  code          String       @unique @db.VarChar(20)
+  orderId       String       @map("order_id") @db.Uuid
+  // Número de entrada dentro de la orden (1..cantidad). Junto con orderId hace la emisión idempotente.
+  seq           Int
+  userId        String       @map("user_id") @db.Uuid
+  holderName    String       @map("holder_name") @db.VarChar(100)
+  holderEmail   String       @map("holder_email") @db.VarChar(150)
+  eventId       String       @map("event_id") @db.Uuid
+  eventName     String       @map("event_name") @db.VarChar(150)
+  venue         String       @db.VarChar(150)
+  eventStartsAt DateTime     @map("event_starts_at")
+  sectorId      String       @map("sector_id") @db.Uuid
+  sectorName    String       @map("sector_name") @db.VarChar(50)
+  status        TicketStatus @default(VALID)
+  // Ruta relativa a TICKETS_STORAGE_DIR: <orderId>/<ticketId>.pdf
+  pdfPath       String?      @map("pdf_path") @db.VarChar(200)
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@unique([orderId, seq])
+  @@index([userId])
+  @@index([eventId])
+  @@map("tickets")
+}

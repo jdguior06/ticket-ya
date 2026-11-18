@@ -11,7 +11,7 @@
 | Dinero | Enteros en **centavos** (`priceCents`, `amountCents`). Moneda fija `BOB`. Nunca `float`. |
 | Nombres | Código, rutas y campos en inglés (`camelCase` en JSON). Documentación y textos de la interfaz en español. |
 | Autenticación de usuarios | `Authorization: Bearer <JWT>` emitido por **auth**, firmado con **RS256**. Cada servicio lo valida con la llave pública (`JWT_PUBLIC_KEY_PATH`), sin llamar a auth. |
-| Autenticación interna | Header `X-Internal-Key: <INTERNAL_API_KEY>` en todas las rutas `/internal/*` y en los servicios internos (payments, notifications). Sin header válido → `401`. |
+| Autenticación interna | Header `X-Internal-Key: <INTERNAL_API_KEY>` en todas las rutas `/internal/*` y en los servicios internos (payments, notifications). Sin header válido → `401`. **Es una sola clave compartida por todo el sistema**: el mismo valor en el `.env` de todos los servicios (en local: `dev-internal-key-cambiar`). |
 | Tiempo máximo de espera | Toda llamada a otro servicio usa timeout (`HTTP_TIMEOUT_MS`, por defecto `5000`). Timeout o error de red → se trata como servicio caído. |
 | Correlación | El servicio que inicia una cadena envía `X-Request-Id` (UUID). Los demás lo reenvían y lo escriben en sus logs. |
 | Logs | Consola, una línea por evento: `2026-11-18T14:03:22.120Z INFO [orders] mensaje {json opcional}`. |
@@ -278,6 +278,8 @@ Reglas de simulación (en este orden):
 - Tarjeta vencida → `REJECTED`, `reason: "CARD_EXPIRED"`.
 - Cualquier otra → `APPROVED`.
 
+Validaciones: `amountCents` entero **≥ 1**. Si llega un `orderId` que ya tiene transacción pero con **otro `amountCents`**, responde `409 IDEMPOTENCY_CONFLICT` (no devuelve en silencio el pago anterior, porque sería un error de orders).
+
 Se guarda solo `cardLast4`, nunca el número completo ni el CVV. Un rechazo responde igual `201`/`200` (es un resultado válido, no un error HTTP).
 
 ---
@@ -318,6 +320,8 @@ PDF: uno por entrada, en `TICKETS_STORAGE_DIR/<orderId>/<ticketId>.pdf`.
 { "orderId": "uuid", "tickets": [ { "...objeto entrada..." } ] }
 ```
 
+Si la orden ya tiene entradas con otro `userId`, evento o sector, o con más entradas que `quantity` → `409 IDEMPOTENCY_CONFLICT`. Si tiene menos (un intento anterior quedó a medias), se completan las que falten.
+
 **GET /internal/tickets/validate**
 ```json
 // 200 (siempre 200; el resultado va en el cuerpo)
@@ -330,6 +334,8 @@ PDF: uno por entrada, en `TICKETS_STORAGE_DIR/<orderId>/<ticketId>.pdf`.
 { "valid": false, "reason": "TICKET_VOID", "ticket": { "...": "..." } }
 ```
 tickets **no** sabe si la entrada ya se usó: eso lo controla checkin.
+
+El `code` se normaliza (sin espacios y en mayúsculas). Un código con formato inválido **no** devuelve 400: responde `200` con `valid: false` y `INVALID_CODE`, para que el portero vea el motivo. El `/health` de tickets también revisa que la carpeta de PDFs se pueda escribir (`checks.storage`).
 
 ---
 
@@ -411,3 +417,5 @@ El token se guarda en `localStorage` y se envía en cada petición. El escáner 
 | 2026-11-18 | v1 inicial. | Claude |
 | 2026-11-18 | §2: el gateway quita solo `/api` (con tabla de ejemplos). §1.2, §6 y §8: `/health` es público también en payments y notifications. §5 paso 3: un timeout de payments ya no libera el cupo; se reconcilia con `GET /payments/order/:orderId`, reintentos idempotentes y reconciliador periódico (`503 PAYMENT_PENDING`). §6: `GET /payments/order/:orderId` responde `404` si no hay transacción. | Revisión de Codex |
 | 2026-11-18 | §4: semántica de `PATCH /events/:id` (lista completa de sectores) y códigos de error de gestión de eventos. | Claude (implementación de events) |
+| 2026-11-18 | §1: `INTERNAL_API_KEY` es una sola clave compartida. §6: `amountCents ≥ 1` y `409 IDEMPOTENCY_CONFLICT` si se repite un `orderId` con otro monto. | Claude (revisión de payments) |
+| 2026-11-18 | §7: `409 IDEMPOTENCY_CONFLICT` en la emisión, normalización del código en la validación y chequeo de la carpeta en `/health`. | Claude (implementación de tickets) |
