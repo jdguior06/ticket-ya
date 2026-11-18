@@ -140,7 +140,7 @@ Objeto evento:
 
 | Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| GET | `/events?search=&from=` | público | Cartelera: solo `PUBLISHED` y con fecha futura, ordenados por `startsAt`. |
+| GET | `/events?search=&from=` | público | Cartelera: solo `PUBLISHED`, ordenados por `startsAt`. Sin `from`, solo futuros. `from` acepta hasta 2 días atrás (la pantalla del portero lo usa para ver el evento de hoy ya empezado). |
 | GET | `/events/:id` | público* | Detalle. *Si no está publicado, solo lo ve su organizador. |
 | GET | `/events/mine` | ORGANIZER | Eventos del organizador (todos los estados). |
 | POST | `/events` | ORGANIZER | Crea en `DRAFT`. Incluye sectores. |
@@ -392,6 +392,16 @@ Si el SMTP falla → `503 DEPENDENCY_UNAVAILABLE` (orders lo registra y sigue).
 ```
 `reason`: `INVALID_CODE` | `WRONG_EVENT` | `TICKET_VOID` | `ALREADY_USED`. Si tickets no responde → `503 DEPENDENCY_UNAVAILABLE` (la web muestra "Sin conexión, reintente").
 
+**GET /checkin/events/:eventId/stats**
+```json
+{ "eventId": "uuid", "totalCheckedIn": 76, "lastCheckInAt": "2026-12-05T23:41:10.000Z" }
+```
+
+**GET /checkin/events/:eventId/recent?limit=20** (máximo 100, más reciente primero)
+```json
+[ { "code": "EY-...", "holderName": "Diego", "sectorName": "General", "checkedInAt": "...", "doormanId": "uuid" } ]
+```
+
 Lectura única: la tabla de ingresos tiene restricción `UNIQUE (ticket_id)`. Dos escaneos simultáneos → solo uno gana; el otro recibe `ALREADY_USED`.
 
 Se guarda: `ticketId`, `code`, `eventId`, `doormanId` (del token), `checkedInAt`.
@@ -429,3 +439,5 @@ El token se guarda en `localStorage` y se envía en cada petición. El escáner 
 | 2026-11-18 | §1: `INTERNAL_API_KEY` es una sola clave compartida. §6: `amountCents ≥ 1` y `409 IDEMPOTENCY_CONFLICT` si se repite un `orderId` con otro monto. | Claude (revisión de payments) |
 | 2026-11-18 | §7: `409 IDEMPOTENCY_CONFLICT` en la emisión, normalización del código en la validación y chequeo de la carpeta en `/health`. | Claude (implementación de tickets) |
 | 2026-11-18 | §5: detalles de orders (Idempotency-Key, validación previa de tarjeta, events caído, correo después de las entradas, reintentos del reconciliador, `details.order` en errores, `paidAt`). | Claude (implementación de orders) |
+| 2026-11-18 | §4: `from` en la cartelera acepta hasta 2 días atrás (para el portero). | Claude (web) |
+| 2026-11-18 | §9: forma de las respuestas de `stats` y `recent` de checkin (la web usa `totalCheckedIn`). | Claude (web) |

@@ -14,3 +14,5 @@ Thumbs.db
 .idea/
 **/src/generated/
 *.tsbuildinfo
+# scripts/dev.ps1: PIDs y logs locales
+.dev/

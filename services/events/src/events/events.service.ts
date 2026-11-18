@@ -36,10 +36,13 @@ export class EventsService {
   // ---------- Lectura ----------
 
   async listPublished(query: ListEventsQuery) {
-    const from = query.from ? new Date(query.from) : new Date();
+    // Sin `from`: solo eventos futuros (cartelera). Con `from`: se aceptan hasta 2 días atrás,
+    // para que el portero vea el evento de hoy aunque ya haya empezado.
+    const minFrom = new Date(Date.now() - 2 * 86400e3);
+    const requested = query.from ? new Date(query.from) : new Date();
     const where: Prisma.EventWhereInput = {
       status: 'PUBLISHED',
-      startsAt: { gte: from > new Date() ? from : new Date() },
+      startsAt: { gte: requested < minFrom ? minFrom : requested },
     };
     if (query.search) {
       where.OR = [

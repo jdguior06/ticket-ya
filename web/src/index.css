@@ -1,0 +1,94 @@
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/figtree';
+@import 'tailwindcss';
+
+/*
+  EntradasYa — sistema visual
+  La pieza memorable es el BOLETO: tarjetas con muescas laterales y una línea
+  perforada que separa el talón (fecha o precio). Todo lo demás es sobrio.
+*/
+@theme {
+  --font-display: 'Bricolage Grotesque Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-tinta: #1f1b4d;      /* texto principal, encabezados, fondo del portero */
+  --color-tinta-suave: #5b5885;
+  --color-papel: #f3f4f8;      /* fondo de la app */
+  --color-boleto: #ffffff;     /* superficie de los boletos */
+  --color-linea: #dfe1ec;
+  --color-fucsia: #e0306e;     /* acción principal */
+  --color-fucsia-oscuro: #b81f56;
+  --color-ambar: #ffc23d;      /* talón / acento */
+  --color-ok: #0e9f6e;
+  --color-error: #d62f46;
+}
+
+@layer base {
+  html {
+    background: var(--color-papel);
+    color: var(--color-tinta);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-ambar);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+}
+
+@layer components {
+  /* Boleto horizontal: muescas arriba y abajo en --cut (posición del talón). */
+  .ticket {
+    --cut: 6.5rem;
+    --r: 11px;
+    position: relative;
+    background: var(--color-boleto);
+    border-radius: 14px;
+    -webkit-mask:
+      radial-gradient(circle var(--r) at var(--cut) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+      radial-gradient(circle var(--r) at var(--cut) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+    mask:
+      radial-gradient(circle var(--r) at var(--cut) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+      radial-gradient(circle var(--r) at var(--cut) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+    filter: drop-shadow(0 1px 0 var(--color-linea)) drop-shadow(0 8px 18px rgb(31 27 77 / 0.07));
+  }
+  /* Línea perforada vertical, alineada con las muescas. */
+  .perforated {
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: var(--cut);
+    border-left: 2px dashed var(--color-linea);
+  }
+  /* Boleto vertical (entradas del cliente): muescas a los costados en --cut-y. */
+  .ticket-v {
+    --cut-y: 62%;
+    --r: 12px;
+    background: var(--color-boleto);
+    border-radius: 16px;
+    -webkit-mask:
+      radial-gradient(circle var(--r) at 0 var(--cut-y), #0000 98%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle var(--r) at 100% var(--cut-y), #0000 98%, #000) right / 51% 100% no-repeat;
+    mask:
+      radial-gradient(circle var(--r) at 0 var(--cut-y), #0000 98%, #000) left / 51% 100% no-repeat,
+      radial-gradient(circle var(--r) at 100% var(--cut-y), #0000 98%, #000) right / 51% 100% no-repeat;
+    filter: drop-shadow(0 1px 0 var(--color-linea)) drop-shadow(0 10px 22px rgb(31 27 77 / 0.08));
+  }
+}
+
+/* Resultado del portero: aparece con un golpe corto, como un sello. */
+@keyframes sello {
+  0% { transform: scale(0.92); opacity: 0; }
+  60% { transform: scale(1.02); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.sello { animation: sello 220ms ease-out; }

@@ -12,6 +12,6 @@ Cada agente modifica **solo** sus carpetas. `docs/CONTRATOS.md` lo puede tocar c
 | services/tickets | Claude | `feat/tickets` | hecho, probado (falta tu migración inicial) |
 | services/orders | Claude | `feat/orders` | hecho, probado con los 6 servicios (falta tu migración inicial) |
 | services/checkin | Codex (propuesto) | `feat/checkin` | pendiente |
-| web | por definir | `feat/web` | pendiente |
+| web | Claude | `feat/web` | hecho; pantalla del portero probada con checkin simulado (falta el servicio checkin) |
 
 Revisión cruzada: lo que hace Codex lo revisa Claude y viceversa, antes de que Diego lo una a `main`.

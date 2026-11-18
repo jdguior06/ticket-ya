@@ -51,6 +51,30 @@ mailpit
 # 4. Cada servicio: ver su README (copiar .env.example a .env, npm install, migrar, npm run start:dev)
 ```
 
+## Levantar todo con un comando (PowerShell)
+
+`scripts/dev.ps1` arranca Mailpit y los 6 servicios, cada uno en su ventana (**EntradasYa - auth**, **EntradasYa - events**, …). Primero revisa que estén Node, PostgreSQL, las llaves JWT, los `.env`, la misma `INTERNAL_API_KEY` en todos y los puertos libres. Después espera a que cada `/health` responda.
+
+```powershell
+.\scripts\dev.ps1 -Setup        # primera vez: crea .env, npm install, migraciones y seed
+.\scripts\dev.ps1               # levantar todo
+.\scripts\dev.ps1 -Status       # ver qué está arriba
+.\scripts\dev.ps1 -Stop         # detener todo
+.\scripts\dev.ps1 -Only auth,events   # solo algunos servicios
+.\scripts\dev.ps1 -Background   # sin ventanas; logs en .dev\logs\
+```
+
+Si Windows dice que la ejecución de scripts está deshabilitada:
+`powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1` (o una sola vez: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`).
+
+Para Mailpit, el script lo busca en el PATH (`winget install --id axllent.mailpit`) o en la variable `MAILPIT_PATH`.
+
+Con todo arriba, la prueba completa de compra es `node scripts/e2e-compra.mjs`.
+
+## Datos de demostración
+
+Con auth y events levantados: `node scripts/seed-demo.mjs`. Crea 4 eventos publicados, un cliente (`cliente@entradasya.local` / `Cliente123`) y un portero (`portero@entradasya.local` / `Portero123`). La web queda en **https://localhost:5173** (ver [`web/README.md`](web/README.md)).
+
 ## Usuarios de prueba
 
 | Rol | Cómo se crea |
