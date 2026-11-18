@@ -1,0 +1,380 @@
+# EntradasYa v1 — Contratos entre servicios
+
+> Este documento es la **fuente de verdad**. Si el código y este documento no coinciden, se corrige uno de los dos en el mismo cambio. Ningún servicio puede cambiar un contrato sin actualizar este archivo.
+
+## 1. Convenciones generales
+
+| Tema | Regla |
+|---|---|
+| Formato | HTTP + JSON (`Content-Type: application/json`). Fechas en ISO 8601 UTC (`2026-12-05T23:00:00.000Z`). |
+| Identificadores | UUID v4 en todos los recursos. |
+| Dinero | Enteros en **centavos** (`priceCents`, `amountCents`). Moneda fija `BOB`. Nunca `float`. |
+| Nombres | Código, rutas y campos en inglés (`camelCase` en JSON). Documentación y textos de la interfaz en español. |
+| Autenticación de usuarios | `Authorization: Bearer <JWT>` emitido por **auth**, firmado con **RS256**. Cada servicio lo valida con la llave pública (`JWT_PUBLIC_KEY_PATH`), sin llamar a auth. |
+| Autenticación interna | Header `X-Internal-Key: <INTERNAL_API_KEY>` en todas las rutas `/internal/*` y en los servicios internos (payments, notifications). Sin header válido → `401`. |
+| Tiempo máximo de espera | Toda llamada a otro servicio usa timeout (`HTTP_TIMEOUT_MS`, por defecto `5000`). Timeout o error de red → se trata como servicio caído. |
+| Correlación | El servicio que inicia una cadena envía `X-Request-Id` (UUID). Los demás lo reenvían y lo escriben en sus logs. |
+| Logs | Consola, una línea por evento: `2026-11-18T14:03:22.120Z INFO [orders] mensaje {json opcional}`. |
+
+### 1.1 Formato de error (todos los servicios)
+
+```json
+{
+  "statusCode": 409,
+  "code": "SOLD_OUT",
+  "message": "No hay cupo suficiente en el sector General",
+  "details": {}
+}
+```
+
+`code` es estable y en MAYÚSCULAS; la web decide el texto a mostrar según `code`. Códigos comunes: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404), `INTERNAL_ERROR` (500), `DEPENDENCY_UNAVAILABLE` (503).
+
+### 1.2 Chequeo de salud (todos los servicios)
+
+`GET /health` (público, sin token)
+
+- `200` → `{ "status": "ok", "service": "orders", "checks": { "db": "up" }, "uptimeSeconds": 120 }`
+- `503` → `{ "status": "error", "service": "orders", "checks": { "db": "down" } }`
+
+Servicios sin base de datos (notifications, web) revisan su dependencia principal (notifications → SMTP de Mailpit).
+
+### 1.3 Roles y JWT
+
+Roles: `CUSTOMER` (cliente), `ORGANIZER` (organizador), `DOORMAN` (portero).
+
+Payload del token:
+
+```json
+{ "sub": "<userId>", "role": "CUSTOMER", "name": "Diego", "email": "diego@mail.com", "iat": 0, "exp": 0 }
+```
+
+Duración: `JWT_EXPIRES_IN` (por defecto `8h`).
+
+## 2. Puertos y gateway
+
+| Servicio | Puerto local | Base de datos | Expuesto por Nginx | Prefijo público |
+|---|---|---|---|---|
+| web (Vite) | 5173 | — | sí | `/` |
+| auth | 3001 | auth_db | sí | `/api/auth` |
+| events | 3002 | events_db | sí | `/api/events` |
+| orders | 3003 | orders_db | sí | `/api/orders` |
+| payments | 3004 | payments_db | **no** | — |
+| tickets | 3005 | tickets_db | sí | `/api/tickets` |
+| notifications | 3006 | — | **no** | — |
+| checkin | 3007 | checkin_db | sí | `/api/checkin` |
+| PostgreSQL | 5432 | — | no | — |
+| Mailpit | 1025 (SMTP) / 8025 (web) | — | no | — |
+
+El gateway (Nginx, o el proxy de Vite en desarrollo) **quita** el prefijo `/api/<servicio>` y reenvía. Ejemplo: `GET /api/events/123` → `GET http://localhost:3002/events/123`. Las rutas `/internal/*` **nunca** se exponen por el gateway.
+
+> En las tablas de abajo, "Ruta" es la ruta **dentro del servicio**.
+
+---
+
+## 3. auth (3001)
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| POST | `/auth/register` | público | Crea un usuario `CUSTOMER`. |
+| POST | `/auth/login` | público | Devuelve el JWT. |
+| GET | `/auth/me` | token | Datos del usuario actual. |
+| POST | `/auth/users` | ORGANIZER | Crea un usuario `ORGANIZER` o `DOORMAN`. |
+| GET | `/auth/users?role=DOORMAN` | ORGANIZER | Lista usuarios por rol. |
+
+Además, un script de semilla crea un organizador inicial (`SEED_ORGANIZER_EMAIL` / `SEED_ORGANIZER_PASSWORD`).
+
+**POST /auth/register**
+```json
+// request
+{ "name": "Diego", "email": "diego@mail.com", "password": "Secreta123" }
+// 201
+{ "id": "uuid", "name": "Diego", "email": "diego@mail.com", "role": "CUSTOMER", "createdAt": "..." }
+```
+Errores: `409 EMAIL_TAKEN`, `400 VALIDATION_ERROR` (password mínimo 8 caracteres).
+
+**POST /auth/login**
+```json
+// request
+{ "email": "diego@mail.com", "password": "Secreta123" }
+// 200
+{ "accessToken": "eyJ...", "expiresIn": "8h", "user": { "id": "uuid", "name": "Diego", "email": "diego@mail.com", "role": "CUSTOMER" } }
+```
+Errores: `401 INVALID_CREDENTIALS` (mismo error si el correo no existe o la contraseña falla).
+
+Contraseñas: hash con **bcrypt** (10 rondas).
+
+---
+
+## 4. events (3002)
+
+Estados: `DRAFT` (borrador), `PUBLISHED` (publicado), `CANCELLED` (cancelado).
+
+Objeto evento:
+```json
+{
+  "id": "uuid",
+  "organizerId": "uuid",
+  "name": "Concierto de Rock",
+  "description": "texto",
+  "venue": "Estadio Tahuichi",
+  "startsAt": "2026-12-05T23:00:00.000Z",
+  "imageUrl": "https://...",
+  "status": "PUBLISHED",
+  "sectors": [
+    { "id": "uuid", "name": "General", "priceCents": 10000, "capacity": 500, "available": 498 }
+  ],
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| GET | `/events?search=&from=` | público | Cartelera: solo `PUBLISHED` y con fecha futura, ordenados por `startsAt`. |
+| GET | `/events/:id` | público* | Detalle. *Si no está publicado, solo lo ve su organizador. |
+| GET | `/events/mine` | ORGANIZER | Eventos del organizador (todos los estados). |
+| POST | `/events` | ORGANIZER | Crea en `DRAFT`. Incluye sectores. |
+| PATCH | `/events/:id` | ORGANIZER dueño | Edita. En `PUBLISHED` no se puede bajar `capacity` por debajo de lo vendido. |
+| POST | `/events/:id/publish` | ORGANIZER dueño | `DRAFT` → `PUBLISHED`. Requiere al menos 1 sector. |
+| POST | `/events/:id/cancel` | ORGANIZER dueño | → `CANCELLED`. |
+| POST | `/internal/reservations` | interno (orders) | Reserva cupos. |
+| POST | `/internal/reservations/:orderId/release` | interno (orders) | Libera cupos. |
+| GET | `/internal/events/:id` | interno | Evento en cualquier estado (orders lo usa para reportes). |
+
+**POST /events**
+```json
+{
+  "name": "Concierto de Rock", "description": "texto", "venue": "Estadio Tahuichi",
+  "startsAt": "2026-12-05T23:00:00.000Z", "imageUrl": "https://...",
+  "sectors": [
+    { "name": "General", "priceCents": 10000, "capacity": 500 },
+    { "name": "VIP", "priceCents": 35000, "capacity": 50 }
+  ]
+}
+```
+
+**POST /internal/reservations** — idempotente por `orderId` (si ya existe, devuelve la misma reserva con `200`).
+```json
+// request
+{ "orderId": "uuid", "eventId": "uuid", "sectorId": "uuid", "quantity": 2 }
+// 201
+{
+  "reservationId": "uuid", "orderId": "uuid", "status": "RESERVED",
+  "event": { "id": "uuid", "name": "Concierto de Rock", "venue": "Estadio Tahuichi", "startsAt": "...", "organizerId": "uuid" },
+  "sector": { "id": "uuid", "name": "General" },
+  "quantity": 2, "unitPriceCents": 10000, "totalCents": 20000
+}
+```
+Errores: `409 SOLD_OUT`, `409 EVENT_NOT_AVAILABLE` (no publicado, cancelado o pasado), `404 NOT_FOUND`.
+
+Regla anti-sobreventa: el descuento se hace en una sola sentencia atómica
+`UPDATE sectors SET available = available - :q WHERE id = :id AND available >= :q` (0 filas afectadas → `SOLD_OUT`).
+
+**POST /internal/reservations/:orderId/release** — idempotente. `200 { "orderId": "uuid", "status": "RELEASED" }`. Si ya estaba liberada, mismo `200`.
+
+---
+
+## 5. orders (3003)
+
+Estados: `PENDING` (pendiente), `PAID` (pagada), `REJECTED` (rechazada), `CANCELLED` (cancelada, p. ej. agotado).
+
+Objeto orden:
+```json
+{
+  "id": "uuid", "userId": "uuid", "status": "PAID",
+  "eventId": "uuid", "eventName": "Concierto de Rock", "eventStartsAt": "...", "venue": "Estadio Tahuichi",
+  "sectorId": "uuid", "sectorName": "General",
+  "quantity": 2, "unitPriceCents": 10000, "totalCents": 20000,
+  "failureCode": null,
+  "ticketsStatus": "ISSUED",
+  "notificationStatus": "SENT",
+  "createdAt": "...", "updatedAt": "..."
+}
+```
+`ticketsStatus`: `NOT_ISSUED` | `ISSUED` | `FAILED`. `notificationStatus`: `NOT_SENT` | `SENT` | `FAILED`.
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| POST | `/orders` | CUSTOMER | Compra (orquesta todo el flujo). |
+| GET | `/orders/mine` | CUSTOMER | Historial del cliente. |
+| GET | `/orders/:id` | CUSTOMER dueño | Detalle. |
+| POST | `/orders/:id/retry-tickets` | CUSTOMER dueño | Reintenta emitir entradas si `ticketsStatus = FAILED`. |
+| GET | `/orders/reports/events/:eventId` | ORGANIZER dueño del evento | Ventas e ingresos del evento. |
+
+**POST /orders**
+```json
+// request (Idempotency-Key: <uuid> opcional en headers)
+{
+  "eventId": "uuid", "sectorId": "uuid", "quantity": 2,
+  "card": { "number": "4111111111111111", "holder": "DIEGO G", "expMonth": 12, "expYear": 2028, "cvv": "123" }
+}
+```
+`quantity` de 1 a 6. Los datos de tarjeta **no se guardan**; solo se reenvían a payments.
+
+Flujo (orden estricto):
+1. Crea la orden `PENDING`.
+2. events `POST /internal/reservations`. `SOLD_OUT` / `EVENT_NOT_AVAILABLE` → orden `CANCELLED`, responde `409` con ese `code`.
+3. payments `POST /payments`. `REJECTED` → events `release`, orden `REJECTED`, responde `402 PAYMENT_REJECTED`. Si payments no responde → `release`, orden `CANCELLED`, `503 DEPENDENCY_UNAVAILABLE`.
+4. Orden `PAID`. tickets `POST /internal/tickets/issue`. Si falla → `ticketsStatus = FAILED` (la orden **sigue pagada**).
+5. notifications `POST /notifications/order-confirmed`. Si falla → `notificationStatus = FAILED` (la compra **sigue siendo válida**).
+6. Responde `201` con la orden.
+
+**GET /orders/reports/events/:eventId** — orders consulta `GET /internal/events/:id` para verificar que `organizerId` coincide con el token.
+```json
+{
+  "eventId": "uuid", "eventName": "Concierto de Rock",
+  "paidOrders": 40, "ticketsSold": 75, "revenueCents": 950000,
+  "bySector": [ { "sectorId": "uuid", "sectorName": "General", "ticketsSold": 60, "revenueCents": 600000 } ],
+  "rejectedOrders": 3
+}
+```
+
+---
+
+## 6. payments (3004) — interno
+
+Todas las rutas exigen `X-Internal-Key`.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/payments` | Procesa un cobro simulado. |
+| GET | `/payments/order/:orderId` | Consulta la transacción de una orden. |
+
+**POST /payments** — idempotente por `orderId`: si la orden ya tiene transacción, devuelve **la misma** (`200`) sin cobrar de nuevo.
+```json
+// request
+{ "orderId": "uuid", "amountCents": 20000, "currency": "BOB",
+  "card": { "number": "4111111111111111", "holder": "DIEGO G", "expMonth": 12, "expYear": 2028, "cvv": "123" } }
+// 201 (nuevo) o 200 (repetido)
+{ "paymentId": "uuid", "orderId": "uuid", "status": "APPROVED", "reason": null,
+  "amountCents": 20000, "currency": "BOB", "cardLast4": "1111", "createdAt": "..." }
+```
+Reglas de simulación (en este orden):
+- Tarjeta terminada en `0000` → `REJECTED`, `reason: "CARD_DECLINED"`.
+- Tarjeta terminada en `9999` → `REJECTED`, `reason: "INSUFFICIENT_FUNDS"`.
+- Tarjeta vencida → `REJECTED`, `reason: "CARD_EXPIRED"`.
+- Cualquier otra → `APPROVED`.
+
+Se guarda solo `cardLast4`, nunca el número completo ni el CVV. Un rechazo responde igual `201`/`200` (es un resultado válido, no un error HTTP).
+
+---
+
+## 7. tickets (3005)
+
+Objeto entrada:
+```json
+{
+  "id": "uuid", "code": "EY-7KQ2-M9XD-4TPA", "orderId": "uuid", "userId": "uuid",
+  "eventId": "uuid", "eventName": "Concierto de Rock", "venue": "Estadio Tahuichi", "eventStartsAt": "...",
+  "sectorName": "General", "holderName": "Diego", "status": "VALID", "pdfUrl": "/api/tickets/uuid/pdf",
+  "createdAt": "..."
+}
+```
+`status`: `VALID` | `VOID`. Código: `EY-` + 12 caracteres aleatorios (alfabeto sin `0/O/1/I`), generado con `crypto.randomBytes`. El QR contiene **solo el código**.
+
+PDF: uno por entrada, en `TICKETS_STORAGE_DIR/<orderId>/<ticketId>.pdf`.
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| GET | `/tickets/mine` | CUSTOMER | Todas las entradas del cliente. |
+| GET | `/tickets/order/:orderId` | CUSTOMER dueño | Entradas de una orden. |
+| GET | `/tickets/:id/pdf` | CUSTOMER dueño | Descarga el PDF (`application/pdf`). |
+| POST | `/internal/tickets/issue` | interno (orders) | Emite entradas y PDFs. |
+| GET | `/internal/tickets/validate?code=&eventId=` | interno (checkin) | Valida un código. |
+
+**POST /internal/tickets/issue** — idempotente por `orderId`.
+```json
+// request
+{
+  "orderId": "uuid", "userId": "uuid", "holderName": "Diego", "holderEmail": "diego@mail.com",
+  "event": { "id": "uuid", "name": "Concierto de Rock", "venue": "Estadio Tahuichi", "startsAt": "..." },
+  "sector": { "id": "uuid", "name": "General" },
+  "quantity": 2
+}
+// 201 (o 200 si ya existían)
+{ "orderId": "uuid", "tickets": [ { "...objeto entrada..." } ] }
+```
+
+**GET /internal/tickets/validate**
+```json
+// 200 (siempre 200; el resultado va en el cuerpo)
+{ "valid": true, "reason": null, "ticket": { "id": "uuid", "code": "EY-...", "eventId": "uuid", "holderName": "Diego", "sectorName": "General" } }
+// código inexistente
+{ "valid": false, "reason": "INVALID_CODE", "ticket": null }
+// de otro evento
+{ "valid": false, "reason": "WRONG_EVENT", "ticket": { "...": "..." } }
+// anulada
+{ "valid": false, "reason": "TICKET_VOID", "ticket": { "...": "..." } }
+```
+tickets **no** sabe si la entrada ya se usó: eso lo controla checkin.
+
+---
+
+## 8. notifications (3006) — interno
+
+Todas las rutas exigen `X-Internal-Key`. Envía por SMTP a Mailpit. No guarda datos; solo logs.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/notifications/order-confirmed` | Correo de confirmación de compra. |
+| POST | `/notifications/welcome` | (Opcional) Bienvenida. |
+
+**POST /notifications/order-confirmed**
+```json
+// request
+{
+  "to": "diego@mail.com", "customerName": "Diego", "orderId": "uuid",
+  "eventName": "Concierto de Rock", "venue": "Estadio Tahuichi", "eventStartsAt": "...",
+  "sectorName": "General", "quantity": 2, "totalCents": 20000,
+  "ticketsUrl": "http://localhost:5173/mis-entradas?orden=uuid"
+}
+// 202
+{ "status": "SENT", "messageId": "<...>" }
+```
+Si el SMTP falla → `503 DEPENDENCY_UNAVAILABLE` (orders lo registra y sigue).
+
+---
+
+## 9. checkin (3007)
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| POST | `/checkin/scan` | DOORMAN | Valida y registra un ingreso. |
+| GET | `/checkin/events/:eventId/stats` | DOORMAN u ORGANIZER | Total de ingresos del evento. |
+| GET | `/checkin/events/:eventId/recent?limit=20` | DOORMAN u ORGANIZER | Últimos ingresos. |
+
+**POST /checkin/scan**
+```json
+// request
+{ "code": "EY-7KQ2-M9XD-4TPA", "eventId": "uuid" }
+// 200 permitido
+{ "allowed": true, "reason": null, "checkedInAt": "...", "ticket": { "code": "EY-...", "holderName": "Diego", "sectorName": "General" }, "totalCheckedIn": 76 }
+// 200 rechazado
+{ "allowed": false, "reason": "ALREADY_USED", "firstCheckedInAt": "2026-12-05T23:41:10.000Z", "ticket": { "...": "..." } }
+```
+`reason`: `INVALID_CODE` | `WRONG_EVENT` | `TICKET_VOID` | `ALREADY_USED`. Si tickets no responde → `503 DEPENDENCY_UNAVAILABLE` (la web muestra "Sin conexión, reintente").
+
+Lectura única: la tabla de ingresos tiene restricción `UNIQUE (ticket_id)`. Dos escaneos simultáneos → solo uno gana; el otro recibe `ALREADY_USED`.
+
+Se guarda: `ticketId`, `code`, `eventId`, `doormanId` (del token), `checkedInAt`.
+
+---
+
+## 10. web (5173)
+
+Rutas de la interfaz:
+
+| Ruta | Rol | Pantalla |
+|---|---|---|
+| `/` | todos | Cartelera |
+| `/eventos/:id` | todos | Detalle y compra |
+| `/login`, `/registro` | público | Acceso |
+| `/mis-compras` | CUSTOMER | Historial de órdenes |
+| `/mis-entradas` | CUSTOMER | Entradas y descarga de PDF |
+| `/organizador` | ORGANIZER | Mis eventos |
+| `/organizador/eventos/nuevo`, `/organizador/eventos/:id` | ORGANIZER | Crear / editar / publicar |
+| `/organizador/eventos/:id/ventas` | ORGANIZER | Ventas e ingresos |
+| `/organizador/personal` | ORGANIZER | Crear porteros |
+| `/portero` | DOORMAN | Elegir evento y escanear (cámara del teléfono o código a mano) |
+
+El token se guarda en `localStorage` y se envía en cada petición. El escáner usa la cámara trasera; en desarrollo Vite corre con HTTPS para que el teléfono permita la cámara.
