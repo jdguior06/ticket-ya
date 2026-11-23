@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { ImagePicker, type ImageChange } from '../../components/ImagePicker';
 import { Alert, Badge, Button, Field, Loading } from '../../components/ui';
 import { api } from '../../lib/api';
 import { bsToCents, fromLocalInput, toLocalInput } from '../../lib/format';
@@ -20,19 +21,22 @@ export function EventoForm() {
   const { id } = useParams();
   const isNew = !id;
   const navigate = useNavigate();
+  // Mensajes que deja la página de "nuevo evento" al pasar a la de edición.
+  const flash = (useLocation().state ?? {}) as { saved?: string; error?: string };
   const [event, setEvent] = useState<EventItem | null>(null);
-  const [form, setForm] = useState({ name: '', description: '', venue: '', startsAt: '', imageUrl: '' });
+  const [form, setForm] = useState({ name: '', description: '', venue: '', startsAt: '' });
+  const [image, setImage] = useState<ImageChange>({ kind: 'keep' });
   const [sectors, setSectors] = useState<SectorRow[]>([
     { name: 'General', price: '', capacity: '', sold: 0 },
   ]);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState('');
-  const [error, setError] = useState('');
-  const [saved, setSaved] = useState('');
+  const [error, setError] = useState(flash.error ?? '');
+  const [saved, setSaved] = useState(flash.saved ?? '');
 
   function fill(e: EventItem) {
     setEvent(e);
-    setForm({ name: e.name, description: e.description, venue: e.venue, startsAt: toLocalInput(e.startsAt), imageUrl: e.imageUrl ?? '' });
+    setForm({ name: e.name, description: e.description, venue: e.venue, startsAt: toLocalInput(e.startsAt) });
     setSectors(
       e.sectors.map((s) => ({
         id: s.id,
@@ -60,7 +64,6 @@ export function EventoForm() {
       description: form.description,
       venue: form.venue,
       startsAt: fromLocalInput(form.startsAt),
-      ...(form.imageUrl ? { imageUrl: form.imageUrl } : {}),
       sectors: sectors.map((s) => ({
         ...(s.id ? { id: s.id } : {}),
         name: s.name,
@@ -68,6 +71,27 @@ export function EventoForm() {
         capacity: Number(s.capacity),
       })),
     };
+  }
+
+  /** Aplica la foto elegida después de guardar los datos. Devuelve el evento actualizado. */
+  async function applyImage(eventId: string): Promise<EventItem | null> {
+    if (image.kind === 'keep') return null;
+    let updated: EventItem;
+    if (image.kind === 'set') {
+      const data = new FormData();
+      const ext = image.blob.type === 'image/webp' ? 'webp' : 'jpg';
+      data.append('image', image.blob, `foto.${ext}`);
+      updated = await api<EventItem>(`/events/${eventId}/image`, { method: 'PUT', form: data });
+    } else {
+      updated = await api<EventItem>(`/events/${eventId}/image`, { method: 'DELETE' });
+    }
+    setImage({ kind: 'keep' });
+    return updated;
+  }
+
+  /** Si los datos se guardaron pero la foto no, se avisa sin perder lo guardado. */
+  function imageError(err: unknown) {
+    setError(`Los cambios se guardaron, pero la foto no: ${errorText(err)}`);
   }
 
   async function save(e: FormEvent) {
@@ -78,12 +102,26 @@ export function EventoForm() {
     try {
       if (isNew) {
         const created = await api<EventItem>('/events', { method: 'POST', body: body() });
-        navigate(`/organizador/eventos/${created.id}`, { replace: true });
-        setSaved('Evento creado como borrador. Publícalo cuando esté listo.');
-        fill(created);
+        // La foto se sube antes de cambiar de página: la página de edición carga el evento ya con su foto.
+        let imageProblem = '';
+        try {
+          await applyImage(created.id);
+        } catch (err) {
+          imageProblem = `El evento se guardó, pero la foto no: ${errorText(err)}`;
+        }
+        navigate(`/organizador/eventos/${created.id}`, {
+          replace: true,
+          state: { saved: 'Evento creado como borrador. Publícalo cuando esté listo.', error: imageProblem },
+        });
       } else {
         fill(await api<EventItem>(`/events/${id}`, { method: 'PATCH', body: body() }));
         setSaved('Cambios guardados.');
+        try {
+          const withImage = await applyImage(id!);
+          if (withImage) fill(withImage);
+        } catch (err) {
+          imageError(err);
+        }
       }
     } catch (err) {
       setError(errorText(err));
@@ -131,7 +169,7 @@ export function EventoForm() {
           <Field className="sm:col-span-2" label="Nombre del evento" required minLength={3} maxLength={150} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <Field label="Lugar" required minLength={2} value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} placeholder="Estadio Tahuichi" />
           <Field label="Fecha y hora" type="datetime-local" required value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} hint="Hora de Bolivia." />
-          <Field className="sm:col-span-2" label="Imagen (URL, opcional)" type="url" value={form.imageUrl} onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} placeholder="https://…" />
+          <ImagePicker currentUrl={event?.imageUrl ?? null} change={image} onChange={setImage} disabled={readOnly} />
           <label className="block sm:col-span-2">
             <span className="mb-1.5 block text-sm font-semibold">Descripción</span>
             <textarea

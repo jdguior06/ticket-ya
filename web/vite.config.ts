@@ -19,6 +19,17 @@ export default defineConfig(({ mode }) => {
   for (const [name, target] of Object.entries(targets)) {
     proxy[`/api/${name}`] = { target, changeOrigin: true, rewrite: (path) => path.replace(/^\/api/, '') };
   }
+  // /api/estado/<servicio> -> GET /health de ese servicio (página /estado). Incluye los internos:
+  // solo dice si responden, no expone sus rutas.
+  const ports: Record<string, string> = {
+    ...targets,
+    payments: env.EY_PAYMENTS_URL ?? 'http://localhost:3004',
+    notifications: env.EY_NOTIFICATIONS_URL ?? 'http://localhost:3006',
+  };
+  for (const [name, target] of Object.entries(ports)) {
+    proxy[`/api/estado/${name}`] = { target, changeOrigin: true, rewrite: () => '/health' };
+  }
+
   // HTTPS con certificado de desarrollo: el navegador del teléfono solo permite la cámara en HTTPS.
   const https = env.EY_HTTPS !== 'false';
 

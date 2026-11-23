@@ -1,10 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppException } from '../common/errors/app-exception.js';
 import type { AuthUser } from '../common/auth/auth.types.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateEventDto, ListEventsQuery, SectorInputDto, UpdateEventDto } from './dto.js';
 import { toEventResponse, type EventWithSectors } from './events.mapper.js';
+import { ImagesService } from './images.service.js';
 
 const LIST_LIMIT = 100;
 
@@ -31,7 +33,15 @@ function parseFutureDate(value: string): Date {
 export class EventsService {
   private readonly logger = new Logger('Events');
 
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly publicBasePath: string;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly images: ImagesService,
+    config: ConfigService,
+  ) {
+    this.publicBasePath = (config.get<string>('EVENTS_PUBLIC_BASE_PATH') ?? '/api/events').replace(/\/$/, '');
+  }
 
   // ---------- Lectura ----------
 
@@ -182,6 +192,9 @@ export class EventsService {
       }
     });
 
+    // Si se cambió la foto por un enlace externo, la foto subida ya no se usa.
+    if (dto.imageUrl !== undefined) await this.images.remove(id);
+
     this.logger.log(`Evento actualizado id=${id}`);
     return toEventResponse(await this.findOrFail(id));
   }
@@ -216,6 +229,41 @@ export class EventsService {
     });
     this.logger.log(`Evento cancelado id=${id}`);
     return toEventResponse(updated);
+  }
+
+  // ---------- Foto ----------
+
+  /** Sube o reemplaza la foto. imageUrl lleva ?v= para que el navegador no muestre la anterior. */
+  async setImage(user: AuthUser, id: string, data: Buffer) {
+    const event = await this.findOwnedOrFail(user, id);
+    if (event.status === 'CANCELLED') {
+      throw new AppException(409, 'EVENT_NOT_EDITABLE', 'Un evento cancelado no se puede editar');
+    }
+    await this.images.save(id, data);
+    const updated = await this.prisma.event.update({
+      where: { id },
+      data: { imageUrl: `${this.publicBasePath}/${id}/image?v=${Date.now()}` },
+      include: { sectors: true },
+    });
+    return toEventResponse(updated);
+  }
+
+  async removeImage(user: AuthUser, id: string) {
+    const event = await this.findOwnedOrFail(user, id);
+    if (event.status === 'CANCELLED') {
+      throw new AppException(409, 'EVENT_NOT_EDITABLE', 'Un evento cancelado no se puede editar');
+    }
+    await this.images.remove(id);
+    const updated = await this.prisma.event.update({ where: { id }, data: { imageUrl: null }, include: { sectors: true } });
+    this.logger.log(`Foto quitada evento=${id}`);
+    return toEventResponse(updated);
+  }
+
+  /** Archivo de la foto para servirlo. Pública: la cartelera la muestra sin sesión. */
+  async imageFile(id: string) {
+    const file = await this.images.find(id);
+    if (!file) throw new AppException(404, 'NOT_FOUND', 'El evento no tiene foto');
+    return file;
   }
 
   // ---------- Auxiliares ----------

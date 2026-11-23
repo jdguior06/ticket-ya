@@ -69,6 +69,30 @@ await req('POST', `${URL.events}/events/${event.id}/publish`, null, bearer(orgTo
 const general = event.sectors.find((s) => s.name === 'General');
 const vip = event.sectors.find((s) => s.name === 'VIP');
 check('organizador crea y publica evento (General 3 cupos, VIP 1)', r.status === 201 && general && vip, r.body);
+
+// --- 1b. foto del evento (multipart, solo el organizador dueño, validada por contenido)
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
+async function upload(bytes, type, token) {
+  const form = new FormData();
+  form.append('image', new Blob([bytes], { type }), 'foto');
+  const res = await fetch(`${URL.events}/events/${event.id}/image`, { method: 'PUT', headers: token ? bearer(token) : {}, body: form });
+  const text = await res.text();
+  return { status: res.status, body: text ? JSON.parse(text) : null };
+}
+r = await upload(PNG, 'image/png', orgToken);
+check('organizador sube la foto del evento', r.status === 200 && /\/image\?v=\d+$/.test(r.body?.imageUrl ?? ''), r.body);
+let img = await fetch(`${URL.events}/events/${event.id}/image`);
+check('la foto se sirve sin sesión con su tipo', img.status === 200 && img.headers.get('content-type') === 'image/png', img.status);
+r = await upload(Buffer.from('<script>alert(1)</script>'), 'image/png', orgToken);
+check('un archivo que no es imagen -> 415 UNSUPPORTED_IMAGE', r.status === 415 && r.body?.code === 'UNSUPPORTED_IMAGE', r.body);
+r = await upload(Buffer.concat([PNG, Buffer.alloc(2 * 1024 * 1024)]), 'image/png', orgToken);
+check('foto de más de 2 MB -> 413', r.status === 413, r.body);
+r = await upload(PNG, 'image/png', null);
+check('subir foto sin sesión -> 401', r.status === 401, r.body);
+r = await req('DELETE', `${URL.events}/events/${event.id}/image`, null, bearer(orgToken));
+img = await fetch(`${URL.events}/events/${event.id}/image`);
+check('quitar la foto deja imageUrl en null y la foto ya no existe', r.status === 200 && r.body.imageUrl === null && img.status === 404, r.body);
+
 const available = async (sectorId) =>
   (await req('GET', `${URL.events}/events/${event.id}`)).body.sectors.find((s) => s.id === sectorId).available;
 
@@ -171,9 +195,14 @@ check('organizador ve 3 ingresos', r.status === 200 && r.body.totalCheckedIn ===
 
 // --- 11. correo en Mailpit (si está disponible su API)
 try {
-  const m = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`, { signal: AbortSignal.timeout(2000) });
-  const data = await m.json();
-  check(`Mailpit recibió el correo de confirmación (${data.messages_count ?? 0})`, (data.messages_count ?? 0) >= 2, data.messages_count);
+  const count = async (q) => {
+    const m = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(2000) });
+    return (await m.json()).messages_count ?? 0;
+  };
+  const compras = await count(`to:${email} subject:"Tus entradas"`);
+  check(`Mailpit recibió los correos de confirmación (${compras})`, compras >= 2, compras);
+  const bienvenida = await count(`to:${email} subject:"Bienvenido"`);
+  check('Mailpit recibió un correo de bienvenida al registrarse', bienvenida === 1, bienvenida);
 } catch {
   console.log('--   Mailpit no responde en ' + MAILPIT + ': se omite la revisión del correo');
 }

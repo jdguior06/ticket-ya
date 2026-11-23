@@ -20,7 +20,7 @@ export interface CallResult<T> {
  * Cliente HTTP para llamar a otros servicios. Siempre usa timeout (HTTP_TIMEOUT_MS).
  * - Timeout o error de red  -> AppException 503 DEPENDENCY_UNAVAILABLE
  * - Respuestas 4xx/5xx      -> se devuelven tal cual en { status, data } para que el llamador decida.
- * (auth no llama a nadie; este archivo es la plantilla para los demás servicios.)
+ * En auth solo se usa para pedir el correo de bienvenida a notifications.
  */
 @Injectable()
 export class HttpClient {

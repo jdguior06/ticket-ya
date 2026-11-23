@@ -24,6 +24,7 @@
     - { ruta: "{{ app_config }}/keys", dueno: root, modo: "0750" }
     - { ruta: "{{ app_datos }}", dueno: "{{ app_usuario }}", modo: "0750" }
     - { ruta: "{{ app_datos }}/tickets", dueno: "{{ app_usuario }}", modo: "0750" }
+    - { ruta: "{{ app_datos }}/events-images", dueno: "{{ app_usuario }}", modo: "0750" }
   loop_control:
     label: "{{ item.ruta }}"
 

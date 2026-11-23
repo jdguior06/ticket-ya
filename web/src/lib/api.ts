@@ -35,8 +35,10 @@ export function setUnauthorizedHandler(fn: () => void) {
 }
 
 interface Options {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
+  /** Para subir archivos (multipart). El navegador pone el Content-Type con su boundary. */
+  form?: FormData;
   headers?: Record<string, string>;
   auth?: boolean; // por defecto se envía el token si existe
 }
@@ -52,7 +54,7 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
     res = await fetch(`/api${path}`, {
       method: opts.method ?? 'GET',
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
     });
   } catch {
     throw new ApiError(0, 'NETWORK', 'Sin conexión con el servidor. Revisa tu red e intenta de nuevo.');

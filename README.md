@@ -73,7 +73,9 @@ Con todo arriba, la prueba completa de compra es `node scripts/e2e-compra.mjs`.
 
 ## Datos de demostración
 
-Con auth y events levantados: `node scripts/seed-demo.mjs`. Crea 4 eventos publicados, un cliente (`cliente@entradasya.local` / `Cliente123`) y un portero (`portero@entradasya.local` / `Portero123`). La web queda en **https://localhost:5173** (ver [`web/README.md`](web/README.md)).
+Con auth y events levantados: `node scripts/seed-demo.mjs`. Crea los eventos publicados con foto (pon fotos propias en [`scripts/demo-fotos/`](scripts/demo-fotos/LEEME.md); si no hay, genera una portada de colores), un cliente (`cliente@entradasya.local` / `Cliente123`) y un portero (`portero@entradasya.local` / `Portero123`). La web queda en **https://localhost:5173** (ver [`web/README.md`](web/README.md)).
+
+**Estado del sistema:** https://localhost:5173/estado muestra los 7 servicios en verde o rojo y qué deja de funcionar cuando uno cae. En la demo puedes apagar uno (por ejemplo payments) y mostrar que el resto sigue.
 
 ## Usuarios de prueba
 

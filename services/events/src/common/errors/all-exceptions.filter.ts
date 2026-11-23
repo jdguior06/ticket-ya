@@ -8,6 +8,7 @@ const DEFAULT_CODES: Record<number, string> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  413: 'PAYLOAD_TOO_LARGE',
   503: 'DEPENDENCY_UNAVAILABLE',
 };
 
@@ -28,7 +29,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const body = exception.getResponse();
       const raw = typeof body === 'string' ? body : (body as { message?: unknown }).message;
-      const message = Array.isArray(raw) ? raw.join('; ') : typeof raw === 'string' ? raw : exception.message;
+      const message = status === 413 ? 'El archivo es demasiado grande' : Array.isArray(raw) ? raw.join('; ') : typeof raw === 'string' ? raw : exception.message;
       res.status(status).json({
         statusCode: status,
         code: DEFAULT_CODES[status] ?? 'HTTP_ERROR',

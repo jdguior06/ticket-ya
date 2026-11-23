@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { PrismaService } from './prisma/prisma.service.js';
 import { AuthController } from './users/auth.controller.js';
 import { UsersService } from './users/users.service.js';
+import { WelcomeNotifier } from './users/welcome.notifier.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { UsersService } from './users/users.service.js';
   controllers: [HealthController, AuthController],
   providers: [
     UsersService,
+    WelcomeNotifier,
     {
       provide: HEALTH_CHECKS,
       inject: [PrismaService],

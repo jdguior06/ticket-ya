@@ -93,6 +93,11 @@ export function Layout() {
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
         <Outlet />
       </main>
+      <footer className="mx-auto max-w-6xl px-4 pb-8 text-sm text-tinta-suave sm:px-6">
+        <Link to="/estado" className="hover:text-tinta hover:underline">
+          Estado del sistema
+        </Link>
+      </footer>
     </div>
   );
 }

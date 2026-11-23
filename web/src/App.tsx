@@ -4,6 +4,7 @@ import { Layout, RequireRole } from './components/Layout';
 import { Login, Registro } from './pages/Acceso';
 import { Cartelera } from './pages/Cartelera';
 import { EventoDetalle } from './pages/EventoDetalle';
+import { Estado } from './pages/Estado';
 import { MisCompras } from './pages/MisCompras';
 import { MisEntradas } from './pages/MisEntradas';
 import { EventoForm } from './pages/org/EventoForm';
@@ -34,6 +35,7 @@ export function App() {
         <Route path="eventos/:id" element={<EventoDetalle />} />
         <Route path="login" element={<Login />} />
         <Route path="registro" element={<Registro />} />
+        <Route path="estado" element={<Estado />} />
 
         <Route element={<RequireRole roles={['CUSTOMER']} />}>
           <Route path="mis-entradas" element={<MisEntradas />} />

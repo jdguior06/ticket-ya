@@ -39,7 +39,7 @@ $OnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
 if (-not $OnWindows) { $Background = $true }  # fuera de Windows no hay ventanas nuevas
 
 $AllServices = @(
-  [pscustomobject]@{ Name = 'auth';          Port = 3001; Db = $true;  Internal = $false }
+  [pscustomobject]@{ Name = 'auth';          Port = 3001; Db = $true;  Internal = $true  }
   [pscustomobject]@{ Name = 'events';        Port = 3002; Db = $true;  Internal = $true }
   [pscustomobject]@{ Name = 'orders';        Port = 3003; Db = $true;  Internal = $true }
   [pscustomobject]@{ Name = 'payments';      Port = 3004; Db = $true;  Internal = $true }

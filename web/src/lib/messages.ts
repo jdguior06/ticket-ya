@@ -16,6 +16,9 @@ const BY_CODE: Record<string, string> = {
   EVENT_NOT_EDITABLE: 'Un evento cancelado no se puede editar.',
   EVENT_IN_PAST: 'La fecha del evento ya pasó: cámbiala antes de publicar.',
   NO_SECTORS: 'Agrega al menos un sector antes de publicar.',
+  IMAGE_TOO_LARGE: 'La foto es demasiado pesada (máximo 2 MB).',
+  PAYLOAD_TOO_LARGE: 'La foto es demasiado pesada (máximo 2 MB).',
+  UNSUPPORTED_IMAGE: 'La foto debe ser JPG, PNG o WebP.',
   NETWORK: 'Sin conexión con el servidor. Revisa tu red e intenta de nuevo.',
 };
 

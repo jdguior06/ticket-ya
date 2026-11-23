@@ -2,10 +2,17 @@
 // Requiere auth y events levantados y el seed de auth (organizador inicial).
 // Uso (desde la raíz):  node scripts/seed-demo.mjs
 //
-// Crea (si no existen): 4 eventos publicados, un portero y un cliente.
+// Crea (si no existen): los eventos publicados (con foto), un portero y un cliente.
+// Foto de cada evento: scripts/demo-fotos/<nombre-del-evento>.jpg|png|webp si existe
+// (ej. "noche-de-jazz-en-el-patio.jpg"); si no, se genera una portada de colores.
 //   Cliente:  cliente@entradasya.local  / Cliente123
 //   Portero:  portero@entradasya.local  / Portero123
 //   Organizador (del seed de auth): organizador@entradasya.local / Organizador123
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
+
 const AUTH = process.env.AUTH_URL ?? 'http://localhost:3001';
 const EVENTS = process.env.EVENTS_URL ?? 'http://localhost:3002';
 
@@ -80,10 +87,104 @@ const demo = [
   },
 ];
 
+// ---------- Fotos ----------
+const FOTOS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'demo-fotos');
+const slug = (name) =>
+  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function chunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(td));
+  return Buffer.concat([len, td, crc]);
+}
+
+const PALETAS = [
+  [[233, 30, 140], [255, 183, 3]],
+  [[18, 52, 86], [0, 180, 160]],
+  [[94, 23, 235], [255, 99, 132]],
+  [[10, 70, 40], [190, 230, 80]],
+  [[200, 60, 20], [255, 210, 120]],
+  [[20, 20, 60], [120, 140, 255]],
+];
+
+/** Portada PNG 1200x675: degradado diagonal con dos círculos de luz, distinta para cada nombre. */
+function portada(name) {
+  const W = 1200;
+  const H = 675;
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const [a, b] = PALETAS[h % PALETAS.length];
+  const c1 = [(h % 700) + 250, (h >> 8) % 400 + 100, 260];
+  const c2 = [(h >> 4) % 500 + 100, (h >> 12) % 300 + 300, 200];
+  const raw = Buffer.alloc((W * 3 + 1) * H);
+  let o = 0;
+  for (let y = 0; y < H; y++) {
+    raw[o++] = 0;
+    for (let x = 0; x < W; x++) {
+      const t = (x / W) * 0.65 + (y / H) * 0.35;
+      let glow = 0;
+      for (const [cx, cy, r] of [c1, c2]) glow += Math.max(0, 1 - Math.hypot(x - cx, y - cy) / r) ** 2 * 0.35;
+      for (let i = 0; i < 3; i++) raw[o++] = Math.min(255, Math.round(a[i] + (b[i] - a[i]) * t + 255 * glow));
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(W, 0);
+  ihdr.writeUInt32BE(H, 4);
+  ihdr[8] = 8; // bits por canal
+  ihdr[9] = 2; // RGB
+  return {
+    data: Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', deflateSync(raw, { level: 9 })),
+      chunk('IEND', Buffer.alloc(0)),
+    ]),
+    type: 'image/png',
+    file: 'portada.png',
+  };
+}
+
+function fotoDe(name) {
+  for (const [ext, type] of [['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['png', 'image/png'], ['webp', 'image/webp']]) {
+    const path = join(FOTOS_DIR, `${slug(name)}.${ext}`);
+    if (existsSync(path)) return { data: readFileSync(path), type, file: `foto.${ext}` };
+  }
+  return portada(name);
+}
+
+async function subirFoto(event) {
+  const foto = fotoDe(event.name);
+  const form = new FormData();
+  form.append('image', new Blob([foto.data], { type: foto.type }), foto.file);
+  const r = await fetch(`${EVENTS}/events/${event.id}/image`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${org}` },
+    body: form,
+  }).catch(() => null);
+  if (r?.ok) console.log(`  foto: ${foto.file === 'portada.png' ? 'portada generada' : `demo-fotos/${slug(event.name)}`}`);
+  else console.error(`  no se pudo subir la foto de "${event.name}" (${r ? r.status : 'sin respuesta'})`);
+}
+
+// ---------- Eventos ----------
 const mine = (await req('GET', `${EVENTS}/events/mine`, null, org)).body ?? [];
 for (const e of demo) {
-  if (mine.some((m) => m.name === e.name && m.status !== 'CANCELLED')) {
+  const existing = mine.find((m) => m.name === e.name && m.status !== 'CANCELLED');
+  if (existing) {
     console.log(`= ya existe: ${e.name}`);
+    if (!existing.imageUrl) await subirFoto(existing);
     continue;
   }
   const created = await req('POST', `${EVENTS}/events`, e, org);
@@ -91,6 +192,7 @@ for (const e of demo) {
     console.error(`No se pudo crear "${e.name}":`, created.body);
     continue;
   }
+  await subirFoto(created.body);
   await req('POST', `${EVENTS}/events/${created.body.id}/publish`, null, org);
   console.log(`+ publicado: ${e.name}`);
 }

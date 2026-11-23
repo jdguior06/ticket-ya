@@ -39,3 +39,12 @@ export class OrderConfirmedDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
   ticketsUrl!: string;
 }
+
+export class WelcomeDto {
+  @IsEmail()
+  to!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+}

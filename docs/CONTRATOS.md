@@ -31,7 +31,7 @@
 
 ### 1.2 Chequeo de salud (todos los servicios)
 
-`GET /health` — **público en todos los servicios**: sin token y sin `X-Internal-Key`, **también en payments y notifications** (es la única excepción a "todas las rutas exigen `X-Internal-Key`"). Esos dos servicios igual quedan protegidos porque el gateway no los expone. El gateway tampoco expone los `/health`; se consultan directo al puerto de cada servicio.
+`GET /health` — **público en todos los servicios**: sin token y sin `X-Internal-Key`, **también en payments y notifications** (es la única excepción a "todas las rutas exigen `X-Internal-Key`"). Esos dos servicios igual quedan protegidos porque el gateway no los expone. El gateway solo los expone como `/api/estado/<servicio>` (ver §2), para la página `/estado`.
 
 - `200` → `{ "status": "ok", "service": "orders", "checks": { "db": "up" }, "uptimeSeconds": 120 }`
 - `503` → `{ "status": "error", "service": "orders", "checks": { "db": "down" } }`
@@ -75,7 +75,9 @@ El gateway (Nginx, o el proxy de Vite en desarrollo) elige el servicio por el se
 | `GET /api/tickets/abc/pdf` | `GET http://localhost:3005/tickets/abc/pdf` |
 | `POST /api/checkin/scan` | `POST http://localhost:3007/checkin/scan` |
 
-Como solo se reenvía `/api/<servicio>/...` → `/<servicio>/...`, las rutas `/internal/*` y `/health` **nunca** son alcanzables desde el gateway.
+Como solo se reenvía `/api/<servicio>/...` → `/<servicio>/...`, las rutas `/internal/*` **nunca** son alcanzables desde el gateway.
+
+Única excepción, para la página `/estado` de la web: `GET /api/estado/<servicio>` → `GET /health` de ese servicio (los 7, también payments y notifications). Solo se expone `/health`, que no tiene datos sensibles. Si el servicio está apagado, el gateway responde `502`/`500` sin el campo `service`, y la web lo muestra como "No responde".
 
 > En las tablas de abajo, "Ruta" es la ruta **dentro del servicio**.
 
@@ -162,6 +164,18 @@ Objeto evento:
   ]
 }
 ```
+
+**Foto del evento** (la web la achica en el navegador antes de subirla):
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| PUT | `/events/:id/image` | ORGANIZER dueño | `multipart/form-data` con el campo `image`. JPG, PNG o WebP de hasta 2 MB. Reemplaza la anterior. `200` con el evento. |
+| DELETE | `/events/:id/image` | ORGANIZER dueño | Quita la foto (`imageUrl: null`). `200` con el evento. |
+| GET | `/events/:id/image` | público | La foto, con su `Content-Type`. `404` si no tiene. |
+
+- El tipo se detecta por el contenido del archivo, no por la extensión: otra cosa → `415 UNSUPPORTED_IMAGE`; más de 2 MB → `413 PAYLOAD_TOO_LARGE`; sin archivo → `400`; evento cancelado → `409 EVENT_NOT_EDITABLE`.
+- Al subirla, `imageUrl` queda como `/api/events/:id/image?v=<marca de tiempo>` (cambia en cada subida, así el navegador no muestra la anterior). `imageUrl` también acepta un enlace externo en `POST`/`PATCH`; si se manda uno, se borra la foto subida.
+- Se guarda en disco en `EVENTS_IMAGES_DIR/<eventId>.<jpg|png|webp>`. `/health` incluye el chequeo `images` (carpeta con permiso de escritura).
 
 **PATCH /events/:id** — todos los campos opcionales. `sectors` es la **lista completa**: con `id` → se actualiza; sin `id` → se crea; los que no vienen → se eliminan (solo si nunca tuvieron reservas).
 
@@ -355,7 +369,7 @@ Todas las rutas exigen `X-Internal-Key`, excepto `GET /health`. Envía por SMTP 
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/notifications/order-confirmed` | Correo de confirmación de compra. |
-| POST | `/notifications/welcome` | (Opcional) Bienvenida. |
+| POST | `/notifications/welcome` | (Opcional del PDF) Correo de bienvenida al registrarse. |
 
 **POST /notifications/order-confirmed**
 ```json
@@ -370,6 +384,17 @@ Todas las rutas exigen `X-Internal-Key`, excepto `GET /health`. Envía por SMTP 
 { "status": "SENT", "messageId": "<...>" }
 ```
 Si el SMTP falla → `503 DEPENDENCY_UNAVAILABLE` (orders lo registra y sigue).
+
+**POST /notifications/welcome**
+```json
+// request
+{ "to": "diego@mail.com", "name": "Diego" }
+// 202
+{ "status": "SENT", "messageId": "<...>" }
+```
+auth lo pide después de `POST /auth/register` **sin esperar la respuesta** (con `X-Internal-Key` y timeout): el registro responde `201` aunque notifications esté caído. Solo se envía a clientes que se registran solos, no a porteros ni organizadores creados por el organizador. auth necesita `NOTIFICATIONS_URL` e `INTERNAL_API_KEY`; si falta alguna, no envía bienvenida.
+
+Los dos correos se envían en HTML con versión de texto, desde `EntradasYa <SMTP_FROM>`. Todo dato del usuario se escapa antes de ir al HTML. `WEB_BASE_URL` (opcional) es la dirección del botón "Ver la cartelera".
 
 ---
 
@@ -423,6 +448,7 @@ Rutas de la interfaz:
 | `/organizador/eventos/nuevo`, `/organizador/eventos/:id` | ORGANIZER | Crear / editar / publicar |
 | `/organizador/eventos/:id/ventas` | ORGANIZER | Ventas e ingresos |
 | `/organizador/personal` | ORGANIZER | Crear porteros |
+| `/estado` | todos | Estado de los 7 servicios (se actualiza cada 5 s) |
 | `/portero` | DOORMAN | Elegir evento y escanear (cámara del teléfono o código a mano) |
 
 El token se guarda en `localStorage` y se envía en cada petición. El escáner usa la cámara trasera; en desarrollo Vite corre con HTTPS para que el teléfono permita la cámara.
@@ -441,3 +467,4 @@ El token se guarda en `localStorage` y se envía en cada petición. El escáner 
 | 2026-11-18 | §5: detalles de orders (Idempotency-Key, validación previa de tarjeta, events caído, correo después de las entradas, reintentos del reconciliador, `details.order` en errores, `paidAt`). | Claude (implementación de orders) |
 | 2026-11-18 | §4: `from` en la cartelera acepta hasta 2 días atrás (para el portero). | Claude (web) |
 | 2026-11-18 | §9: forma de las respuestas de `stats` y `recent` de checkin (la web usa `totalCheckedIn`). | Claude (web) |
+| 2026-11-23 | §2: `/api/estado/<servicio>` para la página `/estado`. §4: foto del evento (`PUT`/`DELETE`/`GET /events/:id/image`). §8: `POST /notifications/welcome` y correos en HTML. §10: ruta `/estado`. | Diego |

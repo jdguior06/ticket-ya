@@ -1,5 +1,22 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../common/auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard.js';
 import { OptionalJwtGuard } from '../common/auth/optional-jwt.guard.js';
@@ -8,6 +25,13 @@ import type { AuthUser } from '../common/auth/auth.types.js';
 import { uuidParam } from '../common/uuid-param.js';
 import { CreateEventDto, ListEventsQuery, UpdateEventDto } from './dto.js';
 import { EventsService } from './events.service.js';
+import { MAX_IMAGE_BYTES } from './images.service.js';
+
+/** Lo único que usamos del archivo que entrega multer (en memoria, nunca toca el disco sin validar). */
+interface UploadedImage {
+  buffer: Buffer;
+  size: number;
+}
 
 @Controller('events')
 export class EventsController {
@@ -61,5 +85,38 @@ export class EventsController {
   @Roles('ORGANIZER')
   cancel(@CurrentUser() user: AuthUser, @Param('id', uuidParam('Evento')) id: string) {
     return this.events.cancel(user, id);
+  }
+
+  /** Foto del evento: multipart/form-data con el campo "image" (JPG, PNG o WebP, máx. 2 MB). */
+  @Put(':id/image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ORGANIZER')
+  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: MAX_IMAGE_BYTES, files: 1, fields: 0 } }))
+  setImage(
+    @CurrentUser() user: AuthUser,
+    @Param('id', uuidParam('Evento')) id: string,
+    @UploadedFile() file: UploadedImage | undefined,
+  ) {
+    return this.events.setImage(user, id, file?.buffer ?? Buffer.alloc(0));
+  }
+
+  @Delete(':id/image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ORGANIZER')
+  removeImage(@CurrentUser() user: AuthUser, @Param('id', uuidParam('Evento')) id: string) {
+    return this.events.removeImage(user, id);
+  }
+
+  @Get(':id/image')
+  async image(@Param('id', uuidParam('Evento')) id: string, @Res() res: Response) {
+    const file = await this.events.imageFile(id);
+    res.sendFile(file.path, {
+      headers: {
+        'Content-Type': file.contentType,
+        'X-Content-Type-Options': 'nosniff',
+        // La URL cambia (?v=) cada vez que se sube otra foto, así que se puede cachear.
+        'Cache-Control': 'public, max-age=86400',
+      },
+    });
   }
 }

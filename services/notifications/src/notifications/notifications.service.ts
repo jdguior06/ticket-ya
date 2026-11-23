@@ -2,23 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
 import { AppException } from '../common/errors/app-exception.js';
-import type { OrderConfirmedDto } from './dto.js';
-
-const eventDateFormatter = new Intl.DateTimeFormat('es-BO', {
-  dateStyle: 'long',
-  timeStyle: 'short',
-  timeZone: 'America/La_Paz',
-});
+import type { OrderConfirmedDto, WelcomeDto } from './dto.js';
+import { orderConfirmedEmail, welcomeEmail, type Email } from './templates.js';
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger('Notifications');
   private readonly transport: ReturnType<typeof nodemailer.createTransport>;
-  private readonly from: string;
+  private readonly from: { name: string; address: string };
+  private readonly webBaseUrl: string;
 
   constructor(config: ConfigService) {
     const timeout = Number(config.getOrThrow('SMTP_TIMEOUT_MS'));
-    this.from = config.getOrThrow<string>('SMTP_FROM');
+    this.from = { name: 'EntradasYa', address: config.getOrThrow<string>('SMTP_FROM') };
+    this.webBaseUrl = (config.get<string>('WEB_BASE_URL') ?? 'https://localhost:5173').replace(/\/$/, '');
     this.transport = nodemailer.createTransport({
       host: config.getOrThrow<string>('SMTP_HOST'),
       port: Number(config.getOrThrow('SMTP_PORT')),
@@ -40,31 +37,24 @@ export class NotificationsService {
       throw new AppException(400, 'VALIDATION_ERROR', 'La fecha del evento no es válida');
     }
 
-    const bolivianos = Math.floor(order.totalCents / 100);
-    const centavos = String(order.totalCents % 100).padStart(2, '0');
-    const text = [
-      `Hola, ${order.customerName}.`,
-      `Tu compra ${order.orderId} está confirmada.`,
-      `Evento: ${order.eventName}`,
-      `Lugar: ${order.venue}`,
-      `Fecha: ${eventDateFormatter.format(eventStartsAt)}`,
-      `Sector: ${order.sectorName}`,
-      `Entradas: ${order.quantity}`,
-      `Total: Bs ${bolivianos}.${centavos}`,
-      `Tus entradas: ${order.ticketsUrl}`,
-    ].join('\n');
+    const email = orderConfirmedEmail({ ...order, eventStartsAt });
+    const messageId = await this.send(order.to, email, `la orden ${order.orderId}`);
+    return { status: 'SENT', messageId };
+  }
 
+  async welcome(dto: WelcomeDto) {
+    const email = welcomeEmail({ name: dto.name, webUrl: `${this.webBaseUrl}/` });
+    const messageId = await this.send(dto.to, email, 'la bienvenida');
+    return { status: 'SENT', messageId };
+  }
+
+  private async send(to: string, email: Email, what: string): Promise<string> {
     try {
-      const result = await this.transport.sendMail({
-        from: this.from,
-        to: order.to,
-        subject: 'EntradasYa: compra confirmada',
-        text,
-      });
-      this.logger.log(`Confirmación enviada para la orden ${order.orderId}`);
-      return { status: 'SENT', messageId: result.messageId };
+      const result = await this.transport.sendMail({ from: this.from, to, subject: email.subject, text: email.text, html: email.html });
+      this.logger.log(`Correo enviado: ${what}`);
+      return result.messageId;
     } catch (err) {
-      this.logger.warn(`SMTP no disponible para la orden ${order.orderId}`, {
+      this.logger.warn(`SMTP no disponible para ${what}`, {
         message: err instanceof Error ? err.message : String(err),
       });
       throw new AppException(503, 'DEPENDENCY_UNAVAILABLE', 'No se pudo enviar el correo');

@@ -26,6 +26,8 @@ ProtectSystem=full
 ProtectHome=true
 {% if s.nombre == 'tickets' %}
 ReadWritePaths={{ app_datos }}/tickets
+{% elif s.nombre == 'events' %}
+ReadWritePaths={{ app_datos }}/events-images
 {% endif %}
 
 [Install]

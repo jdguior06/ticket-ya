@@ -7,6 +7,7 @@ import { createEnvValidator } from './common/config/env.js';
 import { HEALTH_CHECKS, HealthController, type HealthCheck } from './common/health/health.controller.js';
 import { EventsController } from './events/events.controller.js';
 import { EventsService } from './events/events.service.js';
+import { ImagesService } from './events/images.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PrismaService } from './prisma/prisma.service.js';
 import { InternalController } from './reservations/internal.controller.js';
@@ -28,12 +29,16 @@ import { ReservationsService } from './reservations/reservations.service.js';
   controllers: [HealthController, EventsController, InternalController],
   providers: [
     EventsService,
+    ImagesService,
     ReservationsService,
     OptionalJwtGuard,
     {
       provide: HEALTH_CHECKS,
-      inject: [PrismaService],
-      useFactory: (prisma: PrismaService): HealthCheck[] => [{ name: 'db', run: () => prisma.$queryRaw`SELECT 1` }],
+      inject: [PrismaService, ImagesService],
+      useFactory: (prisma: PrismaService, images: ImagesService): HealthCheck[] => [
+        { name: 'db', run: () => prisma.$queryRaw`SELECT 1` },
+        { name: 'images', run: () => images.checkWritable() },
+      ],
     },
   ],
 })
