@@ -76,3 +76,15 @@ y el monorepo sin cambios pendientes.
 El script saca cada carpeta **con su historial de commits** (`git subtree split`), agrega el pipeline,
 un `.gitignore` y la insignia del CI en el README, crea el repo y sube las dos ramas.
 El push a `development` dispara el primer pipeline de cada repo. Si un repo ya existe con contenido, lo salta.
+
+## Cambiar un pipeline después de crear los repos
+
+`separar-repos.ps1` copia el pipeline solo al crear cada repo. Si editas un archivo de `ci/workflows/`,
+lleva el cambio a los repos con:
+
+```powershell
+.\scripts\actualizar-pipelines.ps1 -Simular   # muestra qué repos cambiarían
+.\scripts\actualizar-pipelines.ps1            # actualiza .github/workflows/ci.yml y hace push a development
+```
+
+Solo toca los repos cuyo pipeline es distinto; el push a `development` vuelve a ejecutar el pipeline.
