@@ -1,0 +1,67 @@
+# mailpit: correo de prueba (requerimiento: los correos se ven en Mailpit, no se envían de verdad).
+
+- name: Usuario de Mailpit
+  ansible.builtin.user:
+    name: mailpit
+    system: true
+    home: /var/lib/mailpit
+    create_home: true
+    shell: /usr/sbin/nologin
+
+- name: ¿Mailpit ya está instalado?
+  ansible.builtin.stat:
+    path: /usr/local/bin/mailpit
+  register: mailpit_bin
+
+- name: Descargar e instalar Mailpit
+  when: not mailpit_bin.stat.exists
+  block:
+    - name: Descargar el binario oficial
+      ansible.builtin.get_url:
+        url: "https://github.com/axllent/mailpit/releases/{{ mailpit_ruta }}/mailpit-linux-amd64.tar.gz"
+        dest: /tmp/mailpit.tar.gz
+        mode: "0644"
+      vars:
+        mailpit_ruta: "{{ 'latest/download' if mailpit_version == 'latest' else 'download/' ~ mailpit_version }}"
+
+    - name: Descomprimir en /usr/local/bin
+      ansible.builtin.unarchive:
+        src: /tmp/mailpit.tar.gz
+        dest: /usr/local/bin
+        remote_src: true
+        include: [mailpit]
+        mode: "0755"
+
+- name: Servicio systemd de Mailpit
+  ansible.builtin.template:
+    src: plantillas/mailpit.service.j2
+    dest: /etc/systemd/system/mailpit.service
+    mode: "0644"
+  notify: [Recargar systemd, Reiniciar Mailpit]
+
+- name: Aplicar los cambios de systemd ahora
+  ansible.builtin.meta: flush_handlers
+
+- name: Mailpit activo
+  ansible.builtin.systemd_service:
+    name: mailpit
+    state: started
+    enabled: true
+
+# Se crea una vez. Para cambiar la contraseña: borrar el archivo en el servidor y repetir el playbook.
+- name: Contraseña de la bandeja (Nginx, usuario {{ mailpit_usuario }})
+  ansible.builtin.shell:
+    cmd: printf '%s:%s\n' "$USUARIO" "$(openssl passwd -apr1 -stdin <<< "$CLAVE")" > /etc/nginx/mailpit.htpasswd
+    executable: /bin/bash
+    creates: /etc/nginx/mailpit.htpasswd
+  environment:
+    USUARIO: "{{ mailpit_usuario }}"
+    CLAVE: "{{ mailpit_password }}"
+  no_log: true
+
+- name: Permisos del archivo de contraseña
+  ansible.builtin.file:
+    path: /etc/nginx/mailpit.htpasswd
+    owner: root
+    group: www-data
+    mode: "0640"

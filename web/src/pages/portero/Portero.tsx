@@ -1,4 +1,4 @@
-import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
+import { BrowserQRCodeReader } from '@zxing/browser';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Alert, Loading } from '../../components/ui';
 import { api, ApiError } from '../../lib/api';
@@ -126,7 +126,6 @@ type Shown = { kind: 'result'; result: ScanResult } | { kind: 'error'; message: 
 
 function Scanner({ event, onChangeEvent }: { event: EventItem; onChangeEvent: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<IScannerControls | null>(null);
   const busyRef = useRef(false);
   const lastRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const timerRef = useRef<number | undefined>(undefined);
@@ -176,44 +175,85 @@ function Scanner({ event, onChangeEvent }: { event: EventItem; onChangeEvent: ()
     [event.id, dismiss],
   );
 
-  // Cámara trasera con @zxing/browser
+  // validate cambia cuando cambia el evento; la cámara no debe reiniciarse por eso.
+  const validateRef = useRef(validate);
   useEffect(() => {
-    let cancelled = false;
+    validateRef.current = validate;
+  }, [validate]);
+
+  // Cámara trasera. La abrimos nosotros (no la librería) por una razón concreta:
+  // en desarrollo React monta la pantalla dos veces, y el stop() de @zxing deja en null
+  // el video aunque ya lo esté usando la segunda apertura -> pantalla negra.
+  // Aquí cada apertura solo limpia el video si sigue mostrando SU propia cámara.
+  useEffect(() => {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setCamera('off');
       setCameraError('La cámara solo funciona si abres la página con https://. Mientras tanto, escribe el código.');
       return;
     }
-    const reader = new BrowserQRCodeReader(undefined, { delayBetweenScanAttempts: 150 });
-    reader
-      .decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } }, audio: false }, videoRef.current!, (result) => {
-        if (result) void validate(result.getText());
-      })
-      .then((controls) => {
-        if (cancelled) controls.stop();
-        else {
-          controlsRef.current = controls;
-          setCamera('on');
+    const video = videoRef.current!;
+    const reader = new BrowserQRCodeReader();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let stream: MediaStream | null = null;
+    let timer: number | undefined;
+    let cancelled = false;
+
+    // Lee un cuadro cada 200 ms (reducido a 800 px de ancho: suficiente para un QR y liviano en el teléfono).
+    const scan = () => {
+      if (cancelled) return;
+      if (ctx && video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+        const scale = Math.min(1, 800 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        try {
+          const result = reader.decodeFromCanvas(canvas);
+          void validateRef.current(result.getText());
+        } catch {
+          /* este cuadro no tiene un QR legible */
         }
-      })
-      .catch((err: unknown) => {
+      }
+      timer = window.setTimeout(scan, 200);
+    };
+
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        if (cancelled) return;
+        video.srcObject = stream;
+        await video.play();
+        if (cancelled) return;
+        setCamera('on');
+        scan();
+      } catch (err: unknown) {
         if (cancelled) return;
         setCamera('off');
         const name = err instanceof Error ? err.name : '';
         setCameraError(
           name === 'NotAllowedError'
             ? 'No diste permiso para usar la cámara. Actívalo en el navegador o escribe el código.'
-            : name === 'NotFoundError'
-              ? 'Este dispositivo no tiene cámara. Escribe el código de la entrada.'
-              : 'No se pudo abrir la cámara. Escribe el código de la entrada.',
+            : name === 'NotFoundError' || name === 'OverconstrainedError'
+              ? 'No encontramos una cámara en este dispositivo. Escribe el código de la entrada.'
+              : name === 'NotReadableError'
+                ? 'Otra app está usando la cámara. Ciérrala y vuelve a abrir esta pantalla.'
+                : 'No se pudo abrir la cámara. Escribe el código de la entrada.',
         );
-      });
+      }
+    })();
+
     return () => {
       cancelled = true;
-      controlsRef.current?.stop();
-      window.clearTimeout(timerRef.current);
+      window.clearTimeout(timer);
+      stream?.getTracks().forEach((t) => t.stop());
+      if (stream && video.srcObject === stream) video.srcObject = null;
     };
-  }, [validate]);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
 
   function submitManual(e: FormEvent) {
     e.preventDefault();
@@ -248,7 +288,7 @@ function Scanner({ event, onChangeEvent }: { event: EventItem; onChangeEvent: ()
 
         {/* Visor de la cámara */}
         <div className="relative mt-6 aspect-square overflow-hidden rounded-3xl bg-black">
-          <video ref={videoRef} className="size-full object-cover" muted playsInline aria-label="Cámara para escanear el QR" />
+          <video ref={videoRef} className="size-full object-cover" autoPlay muted playsInline aria-label="Cámara para escanear el QR" />
           {camera === 'on' && !shown && (
             <div className="pointer-events-none absolute inset-10 rounded-2xl border-4 border-dashed border-white/60" aria-hidden="true" />
           )}

@@ -1,0 +1,38 @@
+# postgresql: un usuario y una base por servicio (requerimiento técnico 2).
+# Escucha solo en localhost (configuración por defecto de Ubuntu).
+
+- name: PostgreSQL activo al arrancar
+  ansible.builtin.systemd_service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Usuario de cada servicio (crea o actualiza la contraseña)
+  ansible.builtin.command:
+    cmd: psql -v ON_ERROR_STOP=1 -v usuario={{ item.nombre }}_user -v clave={{ bd_passwords[item.nombre] }}
+    stdin: |
+      SELECT format('CREATE ROLE %I LOGIN', :'usuario')
+      WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'usuario') \gexec
+      SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'usuario', :'clave') \gexec
+  become: true
+  become_user: postgres
+  loop: "{{ servicios | selectattr('bd') }}"
+  loop_control:
+    label: "{{ item.nombre }}_user"
+  no_log: true # no mostrar contraseñas
+  changed_when: false
+
+- name: Base de cada servicio (dueño = su usuario; nadie más puede conectarse)
+  ansible.builtin.command:
+    cmd: psql -v ON_ERROR_STOP=1 -v base={{ item.nombre }}_db -v usuario={{ item.nombre }}_user
+    stdin: |
+      SELECT format('CREATE DATABASE %I OWNER %I', :'base', :'usuario')
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'base') \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'base') \gexec
+  become: true
+  become_user: postgres
+  loop: "{{ servicios | selectattr('bd') }}"
+  loop_control:
+    label: "{{ item.nombre }}_db"
+  register: bases
+  changed_when: "'CREATE DATABASE' in bases.stdout"

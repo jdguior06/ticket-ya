@@ -1,0 +1,25 @@
+# Copiar como vault.yml, poner valores reales y cifrarlo:
+#   cp vault.yml.ejemplo vault.yml
+#   ansible-vault encrypt vault.yml
+# Para generar contraseñas:  openssl rand -hex 16
+# Solo letras y números (se usan dentro de URLs de conexión).
+
+vault_bd_password_auth: cambiar_auth
+vault_bd_password_events: cambiar_events
+vault_bd_password_orders: cambiar_orders
+vault_bd_password_payments: cambiar_payments
+vault_bd_password_tickets: cambiar_tickets
+vault_bd_password_checkin: cambiar_checkin
+
+# Clave compartida X-Internal-Key (la misma en todos los servicios del servidor)
+vault_internal_api_key: cambiar_clave_interna
+
+# Organizador inicial (lo crea el seed de auth)
+vault_organizador_email: organizador@entradasya.bo
+vault_organizador_password: cambiar_organizador
+
+# Usuario "admin" de la bandeja de Mailpit
+vault_mailpit_password: cambiar_mailpit
+
+# Aviso de vencimiento del certificado de Let's Encrypt
+vault_certbot_email: tu-correo@ejemplo.com

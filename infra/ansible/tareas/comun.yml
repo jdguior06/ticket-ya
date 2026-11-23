@@ -1,0 +1,21 @@
+# comun: paquetes del sistema que usan los demás pasos.
+
+- name: Paquetes del sistema
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - postgresql
+      - certbot
+      - git
+      - curl
+      - acl
+      - jq
+      - openssl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Actualizaciones de seguridad automáticas
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present

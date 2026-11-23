@@ -1,0 +1,32 @@
+# Administrado por Ansible (infra/ansible). No editar a mano.
+[Unit]
+Description=EntradasYa - {{ s.nombre }}
+After=network-online.target{{ ' postgresql.service' if s.bd else '' }}{{ ' mailpit.service' if s.nombre == 'notifications' else '' }}
+Wants=network-online.target
+# Si el servicio falla 5 veces en 2 minutos, systemd deja de reiniciarlo (evita un bucle).
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ app_usuario }}
+Group={{ app_usuario }}
+# Enlace a la release activa (lo cambia entradasya-deploy).
+WorkingDirectory={{ app_base }}/actual/{{ s.nombre }}
+EnvironmentFile={{ app_config }}/{{ s.nombre }}.env
+ExecStart=/usr/bin/node --enable-source-maps dist/main.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+# Endurecimiento básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+{% if s.nombre == 'tickets' %}
+ReadWritePaths={{ app_datos }}/tickets
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+# Copiar como terraform.tfvars (no va a git) y ajustar.
+region         = "us-east-2"
+tipo_instancia = "m7i-flex.large"
+
+# Tu clave pública (en Windows: C:/Users/<usuario>/.ssh/id_ed25519.pub)
+clave_ssh_admin = "~/.ssh/id_ed25519.pub"
+
+# Clave del pipeline (se crea con: ssh-keygen -t ed25519 -f infra/claves/github-actions -N "" -C github-actions)
+clave_ssh_despliegue = "../claves/github-actions.pub"

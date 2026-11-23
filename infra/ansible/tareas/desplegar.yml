@@ -1,0 +1,19 @@
+# desplegar: primera versión de cada servicio y de la web, con el MISMO script
+# que usa el pipeline. Si ya están en el último commit de main, no hace nada.
+
+- name: Desplegar cada servicio (puede tardar varios minutos la primera vez)
+  ansible.builtin.command: "/usr/local/bin/entradasya-deploy {{ item }}"
+  loop: "{{ (servicios | map(attribute='nombre') | list) + ['web'] }}"
+  register: despliegue
+  changed_when: "'ya desplegado' not in despliegue.stdout"
+
+- name: Organizador inicial (seed de auth, una sola vez)
+  ansible.builtin.shell:
+    cmd: |
+      set -a; source {{ app_config }}/auth.env; set +a
+      cd {{ app_base }}/actual/auth && npx tsx prisma/seed.ts
+      touch {{ app_datos }}/.seed-auth
+    executable: /bin/bash
+    creates: "{{ app_datos }}/.seed-auth"
+  become: true
+  become_user: "{{ app_usuario }}"

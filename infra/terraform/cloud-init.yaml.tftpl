@@ -1,0 +1,53 @@
+#cloud-config
+# Lo que necesita la máquina al nacer, antes de Ansible.
+# El software de la app (Node, PostgreSQL, Nginx, servicios) lo instala Ansible.
+
+hostname: entradasya
+timezone: America/La_Paz
+
+# Usuario por defecto 'ubuntu' (administrador, lo usa Ansible) + 'deploy' (solo el pipeline).
+users:
+  - default
+  - name: deploy
+    gecos: Despliegue desde GitHub Actions
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${clave_despliegue}
+
+ssh_authorized_keys:
+  - ${clave_admin}
+
+# Sin contraseñas por SSH: solo llaves.
+ssh_pwauth: false
+disable_root: true
+
+# Compilar 8 apps a la vez consume mucha memoria: 4 GB de swap como colchón.
+swap:
+  filename: /swapfile
+  size: 4G
+
+package_update: true
+package_upgrade: true
+packages:
+  - git
+  - curl
+  - ca-certificates
+  - gnupg
+  - acl
+  - jq
+  - unzip
+  - python3
+
+write_files:
+  - path: /etc/motd
+    content: |
+      EntradasYa v1 — servidor administrado con Terraform + cloud-init + Ansible.
+      Servicios:   systemctl status 'entradasya-*'
+      Logs:        journalctl -u entradasya-orders -f
+      Desplegar:   sudo entradasya-deploy <servicio> [commit]
+
+runcmd:
+  - [sh, -c, 'date -Is > /var/lib/cloud/entradasya-listo']
+
+final_message: "EntradasYa: cloud-init terminó en $UPTIME segundos"

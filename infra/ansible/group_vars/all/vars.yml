@@ -1,0 +1,52 @@
+# Variables de EntradasYa en el servidor. Los secretos van en vault.yml (cifrado).
+
+repo_url: https://github.com/jdguior06/ticket-ya.git
+repo_rama: main
+
+app_usuario: entradasya
+app_base: /opt/entradasya
+app_config: /etc/entradasya
+app_datos: /var/lib/entradasya
+
+nodejs_version: 22
+
+# Nombre público. nip.io resuelve "entradasya.<ip>.nip.io" a la IP del servidor,
+# así Let's Encrypt puede emitir un certificado (la cámara del portero exige HTTPS).
+dominio: "entradasya.{{ ansible_host }}.nip.io"
+usar_https: true
+certbot_email: "{{ vault_certbot_email }}"
+
+# Los 7 servicios: puerto, si tienen base de datos y si se exponen por /api.
+servicios:
+  - { nombre: auth,          puerto: 3001, bd: true,  publico: true }
+  - { nombre: events,        puerto: 3002, bd: true,  publico: true }
+  - { nombre: orders,        puerto: 3003, bd: true,  publico: true }
+  - { nombre: payments,      puerto: 3004, bd: true,  publico: false }
+  - { nombre: tickets,       puerto: 3005, bd: true,  publico: true }
+  - { nombre: notifications, puerto: 3006, bd: false, publico: false }
+  - { nombre: checkin,       puerto: 3007, bd: true,  publico: true }
+
+# Contraseña de la base de cada servicio (definidas en vault.yml).
+bd_passwords:
+  auth: "{{ vault_bd_password_auth }}"
+  events: "{{ vault_bd_password_events }}"
+  orders: "{{ vault_bd_password_orders }}"
+  payments: "{{ vault_bd_password_payments }}"
+  tickets: "{{ vault_bd_password_tickets }}"
+  checkin: "{{ vault_bd_password_checkin }}"
+
+internal_api_key: "{{ vault_internal_api_key }}"
+
+organizador_inicial:
+  nombre: Organizador
+  email: "{{ vault_organizador_email }}"
+  password: "{{ vault_organizador_password }}"
+
+# Bandeja de Mailpit en https://<dominio>/mailpit/ (protegida con usuario y contraseña).
+mailpit_version: latest
+mailpit_usuario: admin
+mailpit_password: "{{ vault_mailpit_password }}"
+
+# orders: reconciliador de pagos (valores de producción del contrato).
+reconcile_interval_ms: 60000
+pending_timeout_ms: 600000

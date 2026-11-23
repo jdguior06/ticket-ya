@@ -71,6 +71,13 @@ const demo = [
     description: 'Cómo usar sensores baratos y planillas para decidir riego y fertilización. Cupo limitado.',
     sectors: [{ name: 'Asistente', priceCents: 3000, capacity: 8 }],
   },
+  {
+    name: 'Concierto: Los Angeles Azules',
+    venue: 'Casa de la Cultura',
+    startsAt: at(0, 19, 55),
+    description: 'Los angeles azules en vivo. Cupo limitado.',
+    sectors: [{ name: 'Asistente', priceCents: 10000, capacity: 8 }],
+  },
 ];
 
 const mine = (await req('GET', `${EVENTS}/events/mine`, null, org)).body ?? [];

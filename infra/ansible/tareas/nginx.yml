@@ -1,0 +1,63 @@
+# nginx: gateway (única puerta de entrada) y web estática.
+
+- name: Carpeta para los desafíos de Let's Encrypt
+  ansible.builtin.file:
+    path: /var/www/certbot
+    state: directory
+    mode: "0755"
+
+- name: Cabeceras comunes del proxy
+  ansible.builtin.copy:
+    dest: /etc/nginx/snippets/entradasya-proxy.conf
+    mode: "0644"
+    content: |
+      # Administrado por Ansible (infra/ansible). No editar a mano.
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_set_header X-Request-Id $request_id;
+      # Una compra puede reintentar el pago varias veces antes de responder.
+      proxy_read_timeout 60s;
+  notify: Recargar Nginx
+
+- name: ¿Ya hay certificado?
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ dominio }}/fullchain.pem"
+  register: certificado
+
+- name: Sitio de EntradasYa
+  ansible.builtin.template:
+    src: plantillas/nginx-entradasya.conf.j2
+    dest: /etc/nginx/sites-available/entradasya.conf
+    mode: "0644"
+  vars:
+    tls_listo: "{{ certificado.stat.exists }}"
+  notify: Recargar Nginx
+
+- name: Activar el sitio
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/entradasya.conf
+    dest: /etc/nginx/sites-enabled/entradasya.conf
+    state: link
+  notify: Recargar Nginx
+
+- name: Quitar el sitio de ejemplo
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Recargar Nginx
+
+# Si la configuración tiene un error, el play se detiene aquí y Nginx sigue con la anterior.
+- name: Revisar la configuración de Nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Nginx activo
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Aplicar la configuración de Nginx ahora
+  ansible.builtin.meta: flush_handlers

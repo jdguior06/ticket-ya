@@ -1,0 +1,94 @@
+# Administrado por Ansible (infra/ansible). No editar a mano.
+# Gateway de EntradasYa: única puerta de entrada (docs/CONTRATOS.md §2).
+#   /                     web (React compilado)
+#   /api/<servicio>/...   ->  127.0.0.1:<puerto>/<servicio>/...   (se quita solo "/api")
+#   /mailpit/             bandeja de correos de prueba (con usuario y contraseña)
+# payments, notifications, /internal/* y /health de los servicios NO se exponen.
+
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+{% if usar_https and tls_listo %}
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  server_name {{ dominio }} _;
+
+  location /.well-known/acme-challenge/ { root /var/www/certbot; }
+  # El script de despliegue verifica la web por aquí, sin redirección.
+  location = /health { access_log off; default_type text/plain; return 200 "ok\n"; }
+  location / { return 301 https://{{ dominio }}$request_uri; }
+}
+{% endif %}
+
+server {
+{% if usar_https and tls_listo %}
+  # Ubuntu 24.04 trae Nginx 1.24: http2 va en "listen".
+  listen 443 ssl http2 default_server;
+  listen [::]:443 ssl http2 default_server;
+  ssl_certificate     /etc/letsencrypt/live/{{ dominio }}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/{{ dominio }}/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  add_header Strict-Transport-Security "max-age=31536000" always;
+{% else %}
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  location /.well-known/acme-challenge/ { root /var/www/certbot; }
+{% endif %}
+  server_name {{ dominio }} _;
+
+  root {{ app_base }}/actual/web/dist;
+  index index.html;
+  client_max_body_size 1m;
+  server_tokens off;
+
+  add_header X-Content-Type-Options nosniff always;
+  add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+  location = /health { access_log off; default_type text/plain; return 200 "ok\n"; }
+
+  # Servicios públicos por el gateway
+  # Dos locations por servicio: la exacta (/api/orders, sin barra final: POST /api/orders)
+  # y la de prefijo. Con solo "/api/orders/" Nginx respondería 301 a /api/orders y la compra fallaría.
+{% for s in servicios if s.publico %}
+  location = /api/{{ s.nombre }} {
+    proxy_pass http://127.0.0.1:{{ s.puerto }}/{{ s.nombre }};
+    include /etc/nginx/snippets/entradasya-proxy.conf;
+  }
+  location /api/{{ s.nombre }}/ {
+    proxy_pass http://127.0.0.1:{{ s.puerto }}/{{ s.nombre }}/;
+    include /etc/nginx/snippets/entradasya-proxy.conf;
+  }
+{% endfor %}
+
+  # Cualquier otra ruta de la API (payments, notifications, /internal) no existe desde afuera.
+  location /api/ {
+    default_type application/json;
+    return 404 '{"statusCode":404,"code":"NOT_FOUND","message":"Ruta no encontrada","details":{}}';
+  }
+
+  location /mailpit/ {
+    auth_basic "Mailpit - EntradasYa";
+    auth_basic_user_file /etc/nginx/mailpit.htpasswd;
+    proxy_pass http://127.0.0.1:8025;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Host $host;
+  }
+
+  # Archivos de Vite con hash en el nombre: se pueden guardar un año.
+  # ("expires" y no add_header: un add_header en la location anula los del server.)
+  location /assets/ {
+    expires 1y;
+    try_files $uri =404;
+  }
+
+  # React Router: cualquier otra ruta devuelve la app.
+  location / {
+    expires -1;
+    try_files $uri $uri/ /index.html;
+  }
+}

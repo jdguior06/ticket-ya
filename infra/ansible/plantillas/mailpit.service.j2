@@ -1,0 +1,19 @@
+# Administrado por Ansible (infra/ansible). No editar a mano.
+[Unit]
+Description=Mailpit - correo de prueba de EntradasYa
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mailpit
+Group=mailpit
+# SMTP y web solo en localhost: la web se publica por Nginx en /mailpit/ (con contraseña).
+ExecStart=/usr/local/bin/mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025 --webroot /mailpit/ --database /var/lib/mailpit/mailpit.db --max 2000
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mailpit
+
+[Install]
+WantedBy=multi-user.target

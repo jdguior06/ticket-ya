@@ -16,3 +16,16 @@ Thumbs.db
 *.tsbuildinfo
 # scripts/dev.ps1: PIDs y logs locales
 .dev/
+
+# --- infra: nunca subir llaves privadas, estado ni datos de Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform.tfstate.lock.info
+infra/ansible/inventario.ini
+infra/claves/*
+!infra/claves/*.pub
+!infra/claves/LEEME.md
+# Repo público: el vault (contraseñas) se queda solo en tu PC, aunque esté cifrado. Guarda una copia.
+infra/ansible/group_vars/all/vault.yml

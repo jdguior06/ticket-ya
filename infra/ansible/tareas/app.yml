@@ -1,0 +1,116 @@
+# app: usuario del sistema, carpetas, código, llaves JWT, .env, servicios systemd
+# y el script de despliegue que usa el pipeline.
+
+- name: Usuario del sistema para los servicios (sin acceso por SSH)
+  ansible.builtin.user:
+    name: "{{ app_usuario }}"
+    system: true
+    home: "{{ app_base }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Carpetas de la app
+  ansible.builtin.file:
+    path: "{{ item.ruta }}"
+    state: directory
+    owner: "{{ item.dueno }}"
+    group: "{{ app_usuario }}"
+    mode: "{{ item.modo }}"
+  loop:
+    - { ruta: "{{ app_base }}", dueno: "{{ app_usuario }}", modo: "0755" }
+    - { ruta: "{{ app_base }}/releases", dueno: "{{ app_usuario }}", modo: "0755" }
+    - { ruta: "{{ app_base }}/actual", dueno: root, modo: "0755" }
+    - { ruta: "{{ app_config }}", dueno: root, modo: "0750" }
+    - { ruta: "{{ app_config }}/keys", dueno: root, modo: "0750" }
+    - { ruta: "{{ app_datos }}", dueno: "{{ app_usuario }}", modo: "0750" }
+    - { ruta: "{{ app_datos }}/tickets", dueno: "{{ app_usuario }}", modo: "0750" }
+  loop_control:
+    label: "{{ item.ruta }}"
+
+- name: Clon del repositorio (de aquí salen todas las releases)
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ app_base }}/repo"
+    version: "{{ repo_rama }}"
+    depth: 1
+    update: false # lo actualiza entradasya-deploy en cada despliegue
+  become: true
+  become_user: "{{ app_usuario }}"
+
+# --- Llaves RS256 de los JWT: se generan una vez en el servidor y nunca salen de él.
+- name: Llave privada JWT (solo si no existe)
+  ansible.builtin.command:
+    cmd: openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out {{ app_config }}/keys/jwt-private.pem
+    creates: "{{ app_config }}/keys/jwt-private.pem"
+
+- name: Llave pública JWT
+  ansible.builtin.command:
+    cmd: openssl pkey -in {{ app_config }}/keys/jwt-private.pem -pubout -out {{ app_config }}/keys/jwt-public.pem
+    creates: "{{ app_config }}/keys/jwt-public.pem"
+
+- name: Permisos de las llaves (las lee el usuario de la app)
+  ansible.builtin.file:
+    path: "{{ app_config }}/keys/{{ item }}"
+    owner: root
+    group: "{{ app_usuario }}"
+    mode: "0640"
+  loop: [jwt-private.pem, jwt-public.pem]
+
+# --- Variables de cada servicio
+- name: Archivo .env de cada servicio
+  ansible.builtin.template:
+    src: plantillas/servicio.env.j2
+    dest: "{{ app_config }}/{{ s.nombre }}.env"
+    owner: root
+    group: "{{ app_usuario }}"
+    mode: "0640"
+  loop: "{{ servicios }}"
+  loop_control:
+    loop_var: s
+    label: "{{ s.nombre }}"
+  diff: false # no mostrar contraseñas con --diff
+  notify: Reiniciar servicios
+
+- name: Servicio systemd de cada servicio
+  ansible.builtin.template:
+    src: plantillas/servicio.service.j2
+    dest: "/etc/systemd/system/entradasya-{{ s.nombre }}.service"
+    mode: "0644"
+  loop: "{{ servicios }}"
+  loop_control:
+    loop_var: s
+    label: "entradasya-{{ s.nombre }}"
+  notify: Recargar systemd
+
+- name: Aplicar los cambios de systemd ahora
+  ansible.builtin.meta: flush_handlers
+
+- name: Arrancar con el sistema (el primer arranque lo hace el despliegue)
+  ansible.builtin.systemd_service:
+    name: "entradasya-{{ item.nombre }}"
+    enabled: true
+  loop: "{{ servicios }}"
+  loop_control:
+    label: "{{ item.nombre }}"
+
+# --- Despliegue
+- name: Script de despliegue
+  ansible.builtin.copy:
+    src: archivos/entradasya-deploy.sh
+    dest: /usr/local/bin/entradasya-deploy
+    mode: "0755"
+
+- name: El usuario deploy (GitHub Actions) solo puede ejecutar el script de despliegue
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/entradasya-deploy
+    mode: "0440"
+    content: |
+      # Administrado por Ansible. El script valida sus argumentos.
+      deploy ALL=(root) NOPASSWD: /usr/local/bin/entradasya-deploy
+    validate: visudo -cf %s
+
+- name: El usuario deploy puede leer los logs de los servicios (journalctl)
+  ansible.builtin.user:
+    name: deploy
+    groups: systemd-journal
+    append: true

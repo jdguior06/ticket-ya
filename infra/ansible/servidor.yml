@@ -1,0 +1,73 @@
+# Configura el servidor de EntradasYa v1 (Ubuntu 24.04) y despliega todo por primera vez.
+#   ansible-playbook servidor.yml
+# Se puede repetir: solo cambia lo que haga falta.
+#
+# Después de esto, cada cambio en main lo despliega su pipeline (.github/workflows).
+
+- name: Servidor EntradasYa
+  hosts: servidor
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Esperar a que el servidor acepte SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Esperar a que termine cloud-init (usuarios, swap, paquetes)
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+
+    - name: Datos del servidor
+      ansible.builtin.setup:
+
+  tasks:
+    - name: Paquetes base
+      ansible.builtin.import_tasks: tareas/comun.yml
+    - name: Node.js
+      ansible.builtin.import_tasks: tareas/nodejs.yml
+    - name: PostgreSQL y una base por servicio
+      ansible.builtin.import_tasks: tareas/postgresql.yml
+    - name: Usuario, código, llaves, .env y servicios systemd
+      ansible.builtin.import_tasks: tareas/app.yml
+    - name: Mailpit
+      ansible.builtin.import_tasks: tareas/mailpit.yml
+    - name: Nginx (gateway)
+      ansible.builtin.import_tasks: tareas/nginx.yml
+    - name: Primer despliegue de todo
+      ansible.builtin.import_tasks: tareas/desplegar.yml
+    - name: HTTPS con Let's Encrypt
+      ansible.builtin.import_tasks: tareas/https.yml
+      when: usar_https
+
+  post_tasks:
+    - name: Listo
+      ansible.builtin.debug:
+        msg:
+          - "Web:      {{ 'https' if usar_https else 'http' }}://{{ dominio }}"
+          - "Mailpit:  {{ 'https' if usar_https else 'http' }}://{{ dominio }}/mailpit/  (usuario {{ mailpit_usuario }})"
+          - "Organizador: {{ organizador_inicial.email }}"
+          - "Estado:   ssh ubuntu@{{ ansible_host }} 'systemctl status entradasya-*'"
+
+  handlers:
+    - name: Recargar systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    # try-restart: reinicia solo los que ya corren (antes del primer despliegue no hay código).
+    - name: Reiniciar servicios
+      ansible.builtin.command: "systemctl try-restart entradasya-{{ item.nombre }}" # noqa: command-instead-of-module
+      loop: "{{ servicios }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+      changed_when: true
+
+    - name: Reiniciar Mailpit
+      ansible.builtin.systemd_service:
+        name: mailpit
+        state: restarted
+
+    - name: Recargar Nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        state: reloaded

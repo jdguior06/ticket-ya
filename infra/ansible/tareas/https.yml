@@ -1,0 +1,46 @@
+# https: certificado de Let's Encrypt para <dominio> (nip.io).
+# La cámara del portero en el teléfono solo funciona con HTTPS.
+
+- name: Pedir el certificado (solo si no existe; se renueva solo con el timer de certbot)
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --webroot -w /var/www/certbot
+      -d {{ dominio }} --email {{ certbot_email }}
+      --agree-tos --non-interactive --no-eff-email
+    creates: "/etc/letsencrypt/live/{{ dominio }}/fullchain.pem"
+  register: certbot
+
+- name: Recargar Nginx cuando se renueve el certificado
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/recargar-nginx.sh
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      systemctl reload nginx
+
+- name: Activar HTTPS en Nginx (sitio con el certificado)
+  ansible.builtin.template:
+    src: plantillas/nginx-entradasya.conf.j2
+    dest: /etc/nginx/sites-available/entradasya.conf
+    mode: "0644"
+  vars:
+    tls_listo: true
+  notify: Recargar Nginx
+
+- name: Revisar la configuración de Nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Aplicar ahora
+  ansible.builtin.meta: flush_handlers
+
+- name: Comprobar la web por HTTPS
+  ansible.builtin.uri:
+    url: "https://{{ dominio }}/api/events"
+    status_code: 200
+  register: web_https
+  retries: 5
+  delay: 3
+  until: web_https.status == 200
+  delegate_to: localhost
+  become: false
