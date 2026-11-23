@@ -54,6 +54,29 @@ function Invoke-Cmd {
   if ($LASTEXITCODE -ne 0) { throw "Falló: $Exe $($Argumentos -join ' ')" }
 }
 
+# Para comandos que pueden fallar a propósito (¿hay sesión?, ¿existe el repo?):
+# devuelve $true/$false sin mostrar errores. En Windows PowerShell 5.1, redirigir
+# la salida de error de un programa con "Stop" activo corta el script; por eso aquí se usa "Continue".
+function Test-Cmd {
+  param([string]$Exe, [string[]]$Argumentos)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & $Exe @Argumentos 2>&1 | Out-Null; return ($LASTEXITCODE -eq 0) }
+  finally { $ErrorActionPreference = $prev }
+}
+
+# Devuelve la salida normal de un comando (sin errores) o $null si falla.
+function Get-CmdOutput {
+  param([string]$Exe, [string[]]$Argumentos)
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $out = & $Exe @Argumentos 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    return $out
+  } finally { $ErrorActionPreference = $prev }
+}
+
 # Igual, pero en -Simular solo muestra el comando (para lo que crea o sube cosas).
 function Invoke-Remoto {
   param([string]$Exe, [string[]]$Argumentos)
@@ -69,8 +92,7 @@ foreach ($exe in 'git', 'gh') {
     throw "Falta $exe"
   }
 }
-& gh auth status *> $null
-if ($LASTEXITCODE -ne 0) { throw 'gh no tiene sesión. Ejecuta: gh auth login  (GitHub.com, HTTPS, navegador)' }
+if (-not (Test-Cmd gh @('auth', 'status'))) { throw 'gh no tiene sesión. Ejecuta: gh auth login  (GitHub.com, HTTPS, navegador)' }
 Write-Ok 'git y gh listos (sesión iniciada)'
 if (-not $Simular) { Invoke-Cmd gh @('auth', 'setup-git') }   # git push usa la sesión de gh
 
@@ -102,10 +124,9 @@ foreach ($n in $nombres) {
   Write-Paso "$n  ->  github.com/$completo"
 
   # ¿Ya existe con contenido? Entonces no se toca.
-  & gh repo view $completo --json name *> $null
-  $existe = ($LASTEXITCODE -eq 0)
+  $existe = Test-Cmd gh @('repo', 'view', $completo, '--json', 'name')
   if ($existe) {
-    $ramas = (& gh api "repos/$completo/branches" --jq 'length') 2>$null
+    $ramas = Get-CmdOutput gh @('api', "repos/$completo/branches", '--jq', 'length')
     if ($ramas -and [int]$ramas -gt 0) {
       Write-Aviso "ya existe y tiene contenido: se salta (bórralo en GitHub si quieres recrearlo)"
       $resumen += [pscustomobject]@{ Componente = $n; Repo = $completo; Estado = 'ya existía' }
@@ -116,8 +137,7 @@ foreach ($n in $nombres) {
   # 1) Carpeta del monorepo -> rama con su propio historial
   Push-Location $Root
   try {
-    git show-ref --verify --quiet "refs/heads/$rama"
-    if ($LASTEXITCODE -eq 0) { Invoke-Cmd git @('branch', '-D', $rama) | Out-Null }
+    if (Test-Cmd git @('show-ref', '--verify', '--quiet', "refs/heads/$rama")) { Invoke-Cmd git @('branch', '-D', $rama) | Out-Null }
     Invoke-Cmd git @('subtree', 'split', "--prefix=$($c.Ruta)", '-b', $rama, '-q') | Out-Null
   } finally { Pop-Location }
   $commits = git -C $Root rev-list --count $rama
