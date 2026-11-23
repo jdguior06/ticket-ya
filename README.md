@@ -79,7 +79,7 @@ Con auth y events levantados: `node scripts/seed-demo.mjs`. Crea los eventos pub
 
 ## Repositorios y CI
 
-Cada servicio y la web tienen su propio repositorio con su pipeline de GitHub Actions (ramas `main` y `development`; cada push a `development` compila, prueba y genera un artifact `.tar.gz`). Los 8 pipelines y el script que crea los repos están explicados en [`ci/LEEME.md`](ci/LEEME.md).
+Cada servicio y la web tienen su propio repositorio con su pipeline de GitHub Actions (ramas `main` y `development`; cada push a `development` compila, prueba y genera un artifact que se descarga como `.zip`). Los 8 pipelines y el script que crea los repos están explicados en [`ci/LEEME.md`](ci/LEEME.md).
 
 ## Usuarios de prueba
 

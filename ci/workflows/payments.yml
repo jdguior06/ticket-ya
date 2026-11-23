@@ -5,7 +5,7 @@
 # o a mano desde la pestaña Actions).
 #
 #   verificar ──► empaquetar
-#   lint, build,   .tar.gz listo para desplegar
+#   lint, build,   .zip listo para desplegar
 #   pruebas y      (artifact descargable en el resumen
 #   prueba de      de la ejecución)
 #   humo
@@ -120,25 +120,27 @@ jobs:
           SHA=${GITHUB_SHA::7}
           NOMBRE="entradasya-$SERVICIO-$VERSION-$SHA"
           mkdir -p paquete
+          cp -r dist package.json package-lock.json .env.example README.md prisma prisma.config.ts paquete/
+          find paquete -name '*.tsbuildinfo' -delete
           # Información de la compilación (qué commit, qué rama, cuándo).
-          cat > BUILD_INFO.txt <<EOF
-          servicio: $SERVICIO
-          version:  $VERSION
-          commit:   $GITHUB_SHA
-          rama:     $GITHUB_REF_NAME
-          fecha:    $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          node:     $(node -v)
-          ejecucion: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
-          EOF
-          sed -i 's/^ *//' BUILD_INFO.txt
+          {
+            echo "servicio:  $SERVICIO"
+            echo "version:   $VERSION"
+            echo "commit:    $GITHUB_SHA"
+            echo "rama:      $GITHUB_REF_NAME"
+            echo "fecha:     $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "node:      $(node -v)"
+            echo "ejecucion: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > paquete/BUILD_INFO.txt
+          # GitHub comprime la carpeta: se descarga como $NOMBRE.zip
           # Para instalarlo en el servidor:
-          #   tar xzf $NOMBRE.tar.gz && npm ci --omit=dev --ignore-scripts
+          #   unzip $NOMBRE.zip -d $SERVICIO && cd $SERVICIO
+          #   npm ci --omit=dev --ignore-scripts
           #   npx prisma migrate deploy   (con DATABASE_URL)
           #   node dist/main.js
-          tar --exclude='*.tsbuildinfo' -czf "paquete/$NOMBRE.tar.gz" dist package.json package-lock.json .env.example README.md prisma prisma.config.ts BUILD_INFO.txt
-          (cd paquete && sha256sum "$NOMBRE.tar.gz" > "$NOMBRE.tar.gz.sha256")
           echo "nombre=$NOMBRE" >> "$GITHUB_OUTPUT"
-          ls -lh paquete
+          du -sh paquete
+          ls -la paquete
 
       - name: Subir el artifact
         uses: actions/upload-artifact@v6
@@ -149,13 +151,16 @@ jobs:
           if-no-files-found: error
 
       - name: Resumen
+        env:
+          NOMBRE: ${{ steps.paquete.outputs.nombre }}
         run: |
           {
             echo "### Artifact de $SERVICIO"
             echo
-            echo "| Archivo | Tamaño |"
-            echo "|---|---|"
-            for f in paquete/*; do echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"; done
+            echo "Se descarga como **\`$NOMBRE.zip\`** ($(du -sh paquete | cut -f1) sin comprimir) desde la sección **Artifacts** de esta ejecución. Se guarda 30 días."
             echo
-            echo "Se descarga desde la sección **Artifacts** de esta ejecución (se guarda 30 días)."
+            echo "Contenido:"
+            echo '```'
+            ls -1 paquete
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

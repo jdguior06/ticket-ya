@@ -28,9 +28,9 @@ push a development
 ┌─────────────────────────────┐      ┌──────────────────────────────┐
 │ verificar                   │ ───► │ empaquetar                   │
 │ 1. npm ci                   │      │ 1. npm ci + build            │
-│ 2. lint (oxlint)            │      │ 2. .tar.gz + .sha256         │
-│ 3. build (TypeScript)       │      │ 3. sube el artifact          │
-│ 4. pruebas (vitest)         │      │    (se guarda 30 días)       │
+│ 2. lint (oxlint)            │      │ 2. arma la carpeta           │
+│ 3. build (TypeScript)       │      │ 3. la sube como artifact     │
+│ 4. pruebas (vitest)         │      │    (.zip, se guarda 30 días) │
 │ 5. migraciones en BD vacía  │      └──────────────────────────────┘
 │ 6. prueba de humo: arranca  │
 │    y GET /health → 200      │
@@ -45,21 +45,21 @@ push a development
 
 ## El artifact
 
-Nombre: `entradasya-<servicio>-<versión>-<commit>.tar.gz` (ej. `entradasya-orders-0.0.1-a1b2c3d.tar.gz`),
-con su `.sha256` para verificar que no se corrompió.
+Cada ejecución exitosa deja un artifact llamado `entradasya-<servicio>-<versión>-<commit>`
+(ej. `entradasya-orders-0.0.1-a1b2c3d`). Se descarga desde GitHub: repo → **Actions** → la ejecución →
+sección **Artifacts**, y llega como **`.zip`** (GitHub siempre comprime los artifacts). Se guarda 30 días.
 
 | Servicios (NestJS) | Web |
 |---|---|
 | `dist/` compilado, `package.json`, `package-lock.json`, `prisma/` (migraciones), `prisma.config.ts`, `.env.example`, `README.md` y `BUILD_INFO.txt` (commit, rama, fecha) | El contenido de `dist/` (HTML, JS, CSS y fuentes) y `BUILD_INFO.txt` |
 
-Se descarga desde GitHub: repo → **Actions** → la ejecución → sección **Artifacts**.
-
-Para instalar un servicio desde el artifact (por ejemplo en el servidor):
+Para instalar un servicio desde el artifact en Ubuntu:
 
 ```bash
-tar xzf entradasya-orders-0.0.1-a1b2c3d.tar.gz
-npm ci --omit=dev --ignore-scripts      # solo dependencias de producción
-npx prisma migrate deploy               # con DATABASE_URL en el entorno
+sudo apt install -y unzip                      # si no está instalado
+unzip entradasya-orders-0.0.1-a1b2c3d.zip -d orders && cd orders
+npm ci --omit=dev --ignore-scripts             # solo dependencias de producción
+npx prisma migrate deploy                      # con DATABASE_URL en el entorno
 node dist/main.js
 ```
 
