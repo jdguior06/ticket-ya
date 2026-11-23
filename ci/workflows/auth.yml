@@ -1,0 +1,166 @@
+# =====================================================================
+# CI de EntradasYa · auth  (registro, login y JWT (RS256))
+#
+# Se ejecuta en cada push a "development" (y en Pull Requests hacia main/development,
+# o a mano desde la pestaña Actions).
+#
+#   verificar ──► empaquetar
+#   lint, build,   .tar.gz listo para desplegar
+#   pruebas y      (artifact descargable en el resumen
+#   prueba de      de la ejecución)
+#   humo
+# =====================================================================
+name: CI auth
+
+on:
+  push:
+    branches: [development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+# Si llegan dos push seguidos a la misma rama, se cancela la ejecución vieja.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SERVICIO: auth
+  NODE_VERSION: '22'
+  PORT: '3001'
+
+jobs:
+  verificar:
+    name: Lint, build y pruebas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Base de datos de verdad para probar las migraciones y que el servicio arranque.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: auth_user
+          POSTGRES_PASSWORD: auth_pass
+          POSTGRES_DB: auth_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U auth_user -d auth_db"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v6
+
+      - name: Instalar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci   # el postinstall genera el cliente de Prisma
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Build (TypeScript → dist/)
+        run: npm run build
+
+      - name: Pruebas unitarias (vitest)
+        run: npm test
+
+      - name: Preparar el entorno de prueba
+        run: |
+          cp .env.example .env
+          mkdir -p "$RUNNER_TEMP/keys" "$RUNNER_TEMP/storage"
+          # Llaves RS256 de un solo uso, solo para esta ejecución.
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/keys/jwt-private.pem" 2>/dev/null
+          openssl rsa -in "$RUNNER_TEMP/keys/jwt-private.pem" -pubout -out "$RUNNER_TEMP/keys/jwt-public.pem" 2>/dev/null
+          echo "JWT_PUBLIC_KEY_PATH=$RUNNER_TEMP/keys/jwt-public.pem" >> "$GITHUB_ENV"
+          echo "JWT_PRIVATE_KEY_PATH=$RUNNER_TEMP/keys/jwt-private.pem" >> "$GITHUB_ENV"
+
+      - name: Aplicar las migraciones en una base vacía
+        run: npx prisma migrate deploy
+
+      - name: Prueba de humo (el servicio arranca y GET /health responde 200)
+        run: |
+          node dist/main.js > servicio.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://localhost:$PORT/health"; then
+              echo; echo "OK: $SERVICIO responde en el puerto $PORT"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::$SERVICIO no respondió /health en 30 s"
+          cat servicio.log
+          exit 1
+
+  empaquetar:
+    name: Generar artifact
+    needs: verificar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v6
+
+      - name: Instalar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias y compilar
+        run: |
+          npm ci
+          npm run build
+
+      - name: Armar el paquete
+        id: paquete
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SHA=${GITHUB_SHA::7}
+          NOMBRE="entradasya-$SERVICIO-$VERSION-$SHA"
+          mkdir -p paquete
+          # Información de la compilación (qué commit, qué rama, cuándo).
+          cat > BUILD_INFO.txt <<EOF
+          servicio: $SERVICIO
+          version:  $VERSION
+          commit:   $GITHUB_SHA
+          rama:     $GITHUB_REF_NAME
+          fecha:    $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          node:     $(node -v)
+          ejecucion: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          EOF
+          sed -i 's/^ *//' BUILD_INFO.txt
+          # Para instalarlo en el servidor:
+          #   tar xzf $NOMBRE.tar.gz && npm ci --omit=dev --ignore-scripts
+          #   npx prisma migrate deploy   (con DATABASE_URL)
+          #   node dist/main.js
+          tar --exclude='*.tsbuildinfo' -czf "paquete/$NOMBRE.tar.gz" dist package.json package-lock.json .env.example README.md prisma prisma.config.ts BUILD_INFO.txt
+          (cd paquete && sha256sum "$NOMBRE.tar.gz" > "$NOMBRE.tar.gz.sha256")
+          echo "nombre=$NOMBRE" >> "$GITHUB_OUTPUT"
+          ls -lh paquete
+
+      - name: Subir el artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.paquete.outputs.nombre }}
+          path: paquete/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Resumen
+        run: |
+          {
+            echo "### Artifact de $SERVICIO"
+            echo
+            echo "| Archivo | Tamaño |"
+            echo "|---|---|"
+            for f in paquete/*; do echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"; done
+            echo
+            echo "Se descarga desde la sección **Artifacts** de esta ejecución (se guarda 30 días)."
+          } >> "$GITHUB_STEP_SUMMARY"

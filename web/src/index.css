@@ -3,24 +3,29 @@
 @import 'tailwindcss';
 
 /*
-  EntradasYa — sistema visual
-  La pieza memorable es el BOLETO: tarjetas con muescas laterales y una línea
-  perforada que separa el talón (fecha o precio). Todo lo demás es sobrio.
+  EntradasYa — sistema visual (v2, sobrio)
+  - Neutros fríos y un solo acento (fucsia apagado) reservado para la acción principal.
+  - Las fotos de los eventos son las protagonistas; la interfaz se queda quieta alrededor.
+  - El boleto (muescas + línea perforada) aparece solo donde ES un boleto: Mis entradas.
 */
 @theme {
   --font-display: 'Bricolage Grotesque Variable', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
 
-  --color-tinta: #1f1b4d;      /* texto principal, encabezados, fondo del portero */
-  --color-tinta-suave: #5b5885;
-  --color-papel: #f3f4f8;      /* fondo de la app */
-  --color-boleto: #ffffff;     /* superficie de los boletos */
-  --color-linea: #dfe1ec;
-  --color-fucsia: #e0306e;     /* acción principal */
-  --color-fucsia-oscuro: #b81f56;
-  --color-ambar: #ffc23d;      /* talón / acento */
-  --color-ok: #0e9f6e;
-  --color-error: #d62f46;
+  --color-tinta: #1b1a33;        /* texto principal, botones secundarios, fondo del portero */
+  --color-tinta-suave: #62617a;  /* texto secundario (contraste AA sobre papel y blanco) */
+  --color-papel: #f6f7f9;        /* fondo de la app */
+  --color-boleto: #ffffff;       /* superficies */
+  --color-linea: #e5e6ed;        /* bordes y divisores */
+  --color-niebla: #eef0f4;       /* rellenos suaves: estados vacíos, hover */
+  --color-fucsia: #c42d5c;       /* acción principal (apagado respecto de v1) */
+  --color-fucsia-oscuro: #a1234a;
+  --color-ambar: #f2b53a;        /* foco y contador del portero */
+  --color-ok: #0f8a63;
+  --color-error: #c8293f;
+
+  --shadow-tarjeta: 0 1px 2px rgb(27 26 51 / 0.04), 0 4px 16px -6px rgb(27 26 51 / 0.08);
+  --shadow-elevada: 0 2px 4px rgb(27 26 51 / 0.05), 0 16px 40px -12px rgb(27 26 51 / 0.18);
 }
 
 @layer base {
@@ -28,47 +33,30 @@
     background: var(--color-papel);
     color: var(--color-tinta);
     font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   h1, h2, h3 {
     font-family: var(--font-display);
-    letter-spacing: -0.02em;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
     text-wrap: balance;
   }
   :focus-visible {
-    outline: 3px solid var(--color-ambar);
+    outline: 2px solid var(--color-ambar);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: 8px;
   }
+  ::selection { background: rgb(196 45 92 / 0.18); }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
 }
 
 @layer components {
-  /* Boleto horizontal: muescas arriba y abajo en --cut (posición del talón). */
-  .ticket {
-    --cut: 6.5rem;
-    --r: 11px;
-    position: relative;
-    background: var(--color-boleto);
-    border-radius: 14px;
-    -webkit-mask:
-      radial-gradient(circle var(--r) at var(--cut) 0, #0000 98%, #000) top / 100% 51% no-repeat,
-      radial-gradient(circle var(--r) at var(--cut) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
-    mask:
-      radial-gradient(circle var(--r) at var(--cut) 0, #0000 98%, #000) top / 100% 51% no-repeat,
-      radial-gradient(circle var(--r) at var(--cut) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
-    filter: drop-shadow(0 1px 0 var(--color-linea)) drop-shadow(0 8px 18px rgb(31 27 77 / 0.07));
-  }
-  /* Línea perforada vertical, alineada con las muescas. */
-  .perforated {
-    position: absolute;
-    top: 14px;
-    bottom: 14px;
-    left: var(--cut);
-    border-left: 2px dashed var(--color-linea);
-  }
   /* Boleto vertical (entradas del cliente): muescas a los costados en --cut-y. */
   .ticket-v {
     --cut-y: 62%;
@@ -81,7 +69,7 @@
     mask:
       radial-gradient(circle var(--r) at 0 var(--cut-y), #0000 98%, #000) left / 51% 100% no-repeat,
       radial-gradient(circle var(--r) at 100% var(--cut-y), #0000 98%, #000) right / 51% 100% no-repeat;
-    filter: drop-shadow(0 1px 0 var(--color-linea)) drop-shadow(0 10px 22px rgb(31 27 77 / 0.08));
+    filter: drop-shadow(0 0 0.5px rgb(27 26 51 / 0.25)) drop-shadow(0 8px 20px rgb(27 26 51 / 0.08));
   }
 }
 

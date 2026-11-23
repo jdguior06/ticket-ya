@@ -57,8 +57,8 @@ export function ImagePicker({ currentUrl, change, onChange, disabled }: Props) {
   }
 
   return (
-    <div className="sm:col-span-2">
-      <span className="mb-1.5 block text-sm font-semibold">Foto del evento</span>
+    <div>
+      <span className="sr-only">Foto del evento</span>
       <input
         ref={input}
         type="file"
@@ -69,14 +69,14 @@ export function ImagePicker({ currentUrl, change, onChange, disabled }: Props) {
         onChange={(e) => void pick(e.target.files?.[0])}
       />
       {shown ? (
-        <div className="overflow-hidden rounded-xl ring-1 ring-linea">
+        <div className="overflow-hidden rounded-xl border border-linea">
           <img src={shown} alt="Foto del evento" className="aspect-[16/9] w-full bg-tinta/5 object-cover" />
           <div className="flex flex-wrap gap-2 bg-white p-3">
             <button
               type="button"
               disabled={disabled || busy}
               onClick={() => input.current?.click()}
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-inset ring-linea hover:bg-tinta/5 disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3.5 text-sm font-semibold ring-1 ring-inset ring-linea hover:bg-niebla disabled:opacity-50"
             >
               {busy && <Spinner />}
               Cambiar foto
@@ -85,7 +85,7 @@ export function ImagePicker({ currentUrl, change, onChange, disabled }: Props) {
               type="button"
               disabled={disabled || busy}
               onClick={() => onChange(currentUrl ? { kind: 'remove' } : { kind: 'keep' })}
-              className="rounded-full px-4 py-2 text-sm font-semibold text-error hover:bg-error/5 disabled:opacity-50"
+              className="h-9 rounded-xl px-3.5 text-sm font-semibold text-error hover:bg-error/5 disabled:opacity-50"
             >
               Quitar
             </button>
@@ -104,7 +104,7 @@ export function ImagePicker({ currentUrl, change, onChange, disabled }: Props) {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={`flex aspect-[16/9] w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 text-center transition-colors disabled:opacity-50 ${
-            dragging ? 'border-fucsia bg-fucsia/5' : 'border-linea hover:border-tinta/40 hover:bg-tinta/[0.02]'
+            dragging ? 'border-tinta bg-niebla' : 'border-linea hover:border-tinta/30 hover:bg-niebla/50'
           }`}
         >
           {busy ? <Spinner className="size-6" /> : (

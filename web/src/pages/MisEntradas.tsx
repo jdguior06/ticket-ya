@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import { QrImage } from '../components/QrImage';
-import { Alert, Button, Empty, Loading, PageTitle } from '../components/ui';
+import { Alert, Button, ButtonLink, Empty, Loading, PageTitle } from '../components/ui';
 import { api, download } from '../lib/api';
 import { longDate } from '../lib/format';
 import { errorText } from '../lib/messages';
@@ -48,7 +48,7 @@ export function MisEntradas() {
 
   return (
     <>
-      <PageTitle>Mis entradas</PageTitle>
+      <PageTitle subtitle="Muestra el QR en la puerta desde el celular o en el PDF impreso.">Mis entradas</PageTitle>
 
       {justBought && order && (
         <div className="mb-8">
@@ -73,11 +73,8 @@ export function MisEntradas() {
       {error && <Alert>{error}</Alert>}
       {!tickets && !error && <Loading />}
       {tickets && tickets.length === 0 && (
-        <Empty title="Aún no tienes entradas">
-          <Link to="/" className="font-semibold text-tinta underline">
-            Mira la cartelera
-          </Link>{' '}
-          y elige tu próximo evento.
+        <Empty title="Aún no tienes entradas" action={<ButtonLink to="/" variant="secondary">Ver la cartelera</ButtonLink>}>
+          Elige tu próximo evento: tus entradas aparecerán aquí al instante.
         </Empty>
       )}
 
@@ -86,12 +83,17 @@ export function MisEntradas() {
           const first = list[0];
           return (
             <section key={orderId} id={`orden-${orderId}`} aria-labelledby={`t-${orderId}`} className="scroll-mt-28">
-              <div className="mb-4">
-                <h2 id={`t-${orderId}`} className="text-2xl font-bold">
-                  {first.eventName}
-                </h2>
-                <p className="text-tinta-suave">
-                  {longDate(first.eventStartsAt)}, {first.venue}
+              <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-1 border-b border-linea pb-4">
+                <div className="min-w-0">
+                  <h2 id={`t-${orderId}`} className="text-2xl">
+                    {first.eventName}
+                  </h2>
+                  <p className="mt-0.5 text-tinta-suave">
+                    {longDate(first.eventStartsAt)}, {first.venue}
+                  </p>
+                </div>
+                <p className="text-sm text-tinta-suave">
+                  {list.length} {list.length === 1 ? 'entrada' : 'entradas'}
                 </p>
               </div>
               <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -99,7 +101,7 @@ export function MisEntradas() {
                   <li key={t.id} className="ticket-v flex flex-col" style={{ ['--cut-y' as string]: '64%' }}>
                     <div className="flex flex-1 flex-col items-center px-6 pt-6 pb-4">
                       <QrImage value={t.code} size={176} />
-                      <p className="mt-3 font-display text-lg font-bold tracking-wide">{t.code}</p>
+                      <p className="mt-3 text-lg font-semibold tracking-wider tabular-nums">{t.code}</p>
                       {t.status === 'VOID' && <p className="mt-1 font-semibold text-error">Anulada</p>}
                     </div>
                     <div className="mx-5 border-t-2 border-dashed border-linea" aria-hidden="true" />
@@ -111,7 +113,7 @@ export function MisEntradas() {
                         <p className="font-semibold">{t.sectorName}</p>
                         <p className="text-sm text-tinta-suave">{t.holderName}</p>
                       </div>
-                      <Button variant="ghost" className="px-4 py-2 text-sm" loading={downloading === t.id} onClick={() => getPdf(t)}>
+                      <Button variant="ghost" size="sm" loading={downloading === t.id} onClick={() => getPdf(t)}>
                         Descargar PDF
                       </Button>
                     </div>
@@ -123,8 +125,8 @@ export function MisEntradas() {
         })}
       </div>
       {tickets && tickets.length > 0 && (
-        <p className="mt-12 max-w-prose text-tinta-suave">
-          En la puerta muestran el QR de esta pantalla o el del PDF. Cada entrada sirve para un solo ingreso.
+        <p className="mt-12 max-w-prose text-sm text-tinta-suave">
+          Cada entrada sirve para un solo ingreso: no compartas su código QR.
         </p>
       )}
     </>

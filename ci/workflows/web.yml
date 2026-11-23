@@ -1,0 +1,139 @@
+# =====================================================================
+# CI de EntradasYa · web  (interfaz en React + Vite)
+#
+# Se ejecuta en cada push a "development" (y en Pull Requests hacia main/development,
+# o a mano desde la pestaña Actions).
+#
+#   verificar ──► empaquetar
+#   lint, build,   .tar.gz listo para desplegar
+#   pruebas y      (artifact descargable en el resumen
+#   prueba de      de la ejecución)
+#   humo
+# =====================================================================
+name: CI web
+
+on:
+  push:
+    branches: [development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+# Si llegan dos push seguidos a la misma rama, se cancela la ejecución vieja.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SERVICIO: web
+  NODE_VERSION: '22'
+
+jobs:
+  verificar:
+    name: Tipos, build y prueba de humo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v6
+
+      - name: Instalar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Revisar tipos (tsc)
+        run: npm run typecheck
+
+      - name: Build de producción (vite build → dist/)
+        run: npm run build
+
+      - name: Prueba de humo (la página carga)
+        env:
+          EY_HTTPS: 'false'
+        run: |
+          npx vite preview --port 4173 --strictPort > preview.log 2>&1 &
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:4173/ | grep -q '<div id="root">'; then
+              echo "OK: la web responde"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::vite preview no respondió"
+          cat preview.log
+          exit 1
+
+  empaquetar:
+    name: Generar artifact
+    needs: verificar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v6
+
+      - name: Instalar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Instalar dependencias y compilar
+        run: |
+          npm ci
+          npm run build
+
+      - name: Armar el paquete
+        id: paquete
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SHA=${GITHUB_SHA::7}
+          NOMBRE="entradasya-$SERVICIO-$VERSION-$SHA"
+          mkdir -p paquete
+          # Información de la compilación (qué commit, qué rama, cuándo).
+          cat > BUILD_INFO.txt <<EOF
+          servicio: $SERVICIO
+          version:  $VERSION
+          commit:   $GITHUB_SHA
+          rama:     $GITHUB_REF_NAME
+          fecha:    $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          node:     $(node -v)
+          ejecucion: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          EOF
+          sed -i 's/^ *//' BUILD_INFO.txt
+          # Para instalarlo en el servidor:
+          #   tar xzf $NOMBRE.tar.gz && copiar el contenido a la carpeta que sirve Nginx
+          #   (es estático: no hace falta Node en el servidor)
+          cp BUILD_INFO.txt dist/
+          tar -czf "paquete/$NOMBRE.tar.gz" -C dist .
+          (cd paquete && sha256sum "$NOMBRE.tar.gz" > "$NOMBRE.tar.gz.sha256")
+          echo "nombre=$NOMBRE" >> "$GITHUB_OUTPUT"
+          ls -lh paquete
+
+      - name: Subir el artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.paquete.outputs.nombre }}
+          path: paquete/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Resumen
+        run: |
+          {
+            echo "### Artifact de $SERVICIO"
+            echo
+            echo "| Archivo | Tamaño |"
+            echo "|---|---|"
+            for f in paquete/*; do echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"; done
+            echo
+            echo "Se descarga desde la sección **Artifacts** de esta ejecución (se guarda 30 días)."
+          } >> "$GITHUB_STEP_SUMMARY"

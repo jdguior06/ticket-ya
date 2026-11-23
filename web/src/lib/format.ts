@@ -11,6 +11,7 @@ const dayFmt = new Intl.DateTimeFormat('es-BO', { timeZone: TZ, day: 'numeric' }
 const monthFmt = new Intl.DateTimeFormat('es-BO', { timeZone: TZ, month: 'short' });
 const weekdayFmt = new Intl.DateTimeFormat('es-BO', { timeZone: TZ, weekday: 'long' });
 const timeFmt = new Intl.DateTimeFormat('es-BO', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+const weekdayShortFmt = new Intl.DateTimeFormat('es-BO', { timeZone: TZ, weekday: 'short' });
 const longFmt = new Intl.DateTimeFormat('es-BO', {
   timeZone: TZ,
   weekday: 'long',
@@ -29,6 +30,13 @@ export function dateParts(iso: string) {
     weekday: cap(weekdayFmt.format(d)),
     time: timeFmt.format(d),
   };
+}
+
+/** "Sáb 28 nov, 20:30" para tarjetas. */
+export function shortDate(iso: string): string {
+  const d = new Date(iso);
+  const p = dateParts(iso);
+  return `${cap(weekdayShortFmt.format(d).replace('.', ''))} ${p.day} ${p.month}, ${p.time}`;
 }
 
 /** "Sábado, 5 de diciembre de 2026 · 19:00" -> usamos coma, sin punto medio */

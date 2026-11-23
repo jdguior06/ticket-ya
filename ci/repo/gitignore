@@ -1,0 +1,23 @@
+# Dependencias y compilados
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Cliente de Prisma generado (se crea con npm install)
+src/generated/
+
+# Secretos y datos locales: nunca al repositorio
+.env
+.env.local
+keys/
+storage/
+*.pem
+
+# Varios
+*.log
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

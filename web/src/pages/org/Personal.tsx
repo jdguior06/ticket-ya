@@ -36,25 +36,30 @@ export function Personal() {
 
   return (
     <>
-      <PageTitle>Porteros</PageTitle>
+      <PageTitle subtitle="Las cuentas de quienes escanean las entradas en la puerta.">Porteros</PageTitle>
       <div className="grid gap-8 lg:grid-cols-[1fr_22rem]">
         <section>
           {listError && <Alert>{listError}</Alert>}
           {!users && !listError && <Loading />}
           {users && users.length === 0 && <Empty title="Aún no hay porteros">Crea una cuenta para quien escaneará las entradas en la puerta.</Empty>}
           {users && users.length > 0 && (
-            <ul className="divide-y divide-linea rounded-2xl bg-white ring-1 ring-linea">
+            <ul className="divide-y divide-linea overflow-hidden rounded-2xl border border-linea bg-white shadow-tarjeta">
               {users.map((u) => (
-                <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
-                  <span className="font-semibold">{u.name}</span>
-                  <span className="text-tinta-suave">{u.email}</span>
+                <li key={u.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-niebla text-sm font-semibold" aria-hidden="true">
+                    {u.name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('')}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-medium">{u.name}</span>
+                    <span className="block truncate text-sm text-tinta-suave">{u.email}</span>
+                  </span>
                 </li>
               ))}
             </ul>
           )}
         </section>
-        <form onSubmit={submit} className="space-y-4 self-start rounded-2xl bg-white p-6 ring-1 ring-linea">
-          <h2 className="text-xl font-bold">Nuevo portero</h2>
+        <form onSubmit={submit} className="space-y-4 self-start rounded-2xl border border-linea bg-white p-6 shadow-tarjeta">
+          <h2 className="text-xl">Nuevo portero</h2>
           <Field label="Nombre" required minLength={2} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <Field label="Correo" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Field label="Contraseña" type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} hint="Mínimo 8 caracteres. Compártela con el portero." />

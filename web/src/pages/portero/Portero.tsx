@@ -86,10 +86,10 @@ export function Portero() {
 function EventPicker({ events, onPick }: { events: EventItem[]; onPick: (id: string) => void }) {
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-3xl font-extrabold">¿En qué evento estás?</h1>
+      <h1 className="text-3xl sm:text-[2.5rem]">¿En qué evento estás?</h1>
       <p className="mt-2 text-tinta-suave">Solo se aceptarán las entradas de este evento.</p>
       {events.length === 0 ? (
-        <p className="mt-8 rounded-2xl border-2 border-dashed border-linea px-6 py-10 text-center text-tinta-suave">
+        <p className="mt-8 rounded-2xl border border-dashed border-tinta/15 bg-white/60 px-6 py-10 text-center text-tinta-suave">
           No hay eventos publicados para hoy ni para los próximos días.
         </p>
       ) : (
@@ -100,14 +100,14 @@ function EventPicker({ events, onPick }: { events: EventItem[]; onPick: (id: str
               <li key={e.id}>
                 <button
                   onClick={() => onPick(e.id)}
-                  className="flex w-full items-center gap-5 rounded-2xl bg-white px-5 py-4 text-left ring-1 ring-linea hover:ring-tinta"
+                  className="flex w-full items-center gap-5 rounded-2xl border border-linea bg-white px-5 py-4 text-left shadow-tarjeta transition-shadow hover:border-tinta/30 hover:shadow-elevada"
                 >
-                  <span className="w-12 text-center">
-                    <span className="block text-sm capitalize text-tinta-suave">{d.month}</span>
-                    <span className="font-display text-2xl font-extrabold leading-none">{d.day}</span>
+                  <span className="flex w-14 shrink-0 flex-col items-center rounded-xl bg-niebla py-2">
+                    <span className="text-xs font-medium capitalize text-tinta-suave">{d.month}</span>
+                    <span className="font-display text-2xl font-semibold leading-none tabular-nums">{d.day}</span>
                   </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-lg font-bold">{e.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-lg font-semibold">{e.name}</span>
                     <span className="block text-tinta-suave">
                       {d.time} h, {e.venue}
                     </span>
@@ -280,7 +280,7 @@ function Scanner({ event, onChangeEvent }: { event: EventItem; onChangeEvent: ()
         </div>
 
         <div className="mt-6 flex items-baseline gap-3">
-          <span className="font-display text-6xl font-extrabold text-ambar tabular-nums" aria-live="polite">
+          <span className="font-display text-6xl font-semibold text-ambar tabular-nums" aria-live="polite">
             {count ?? '—'}
           </span>
           <span className="text-white/70">personas ingresaron</span>
@@ -313,7 +313,7 @@ function Scanner({ event, onChangeEvent }: { event: EventItem; onChangeEvent: ()
               spellCheck={false}
               className="min-w-0 flex-1 rounded-xl bg-white/10 px-4 py-3 font-display text-lg tracking-wide text-white uppercase placeholder:text-white/40 focus:bg-white/15 focus:outline-none"
             />
-            <button type="submit" className="rounded-xl bg-ambar px-5 font-semibold text-tinta hover:bg-ambar/90">
+            <button type="submit" className="rounded-xl bg-white px-5 font-semibold text-tinta hover:bg-white/90">
               Validar
             </button>
           </div>
@@ -345,7 +345,7 @@ function ResultPanel({ shown, onNext }: { shown: NonNullable<Shown>; onNext: () 
       <svg viewBox="0 0 24 24" className="size-24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {ok ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <path d="M6 6l12 12M18 6L6 18" />}
       </svg>
-      <span className="font-display text-4xl font-extrabold">{ok ? 'Puede ingresar' : SCAN_REASON[r.reason ?? 'INVALID_CODE']}</span>
+      <span className="font-display text-4xl font-semibold">{ok ? 'Puede ingresar' : SCAN_REASON[r.reason ?? 'INVALID_CODE']}</span>
       {r.reason === 'ALREADY_USED' && r.firstCheckedInAt && (
         <span className="text-xl font-semibold">Ingresó a las {timeOnly(r.firstCheckedInAt)}</span>
       )}

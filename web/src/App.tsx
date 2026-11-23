@@ -19,7 +19,7 @@ const Portero = lazy(() => import('./pages/portero/Portero').then((m) => ({ defa
 function NotFound() {
   return (
     <div className="py-16 text-center">
-      <h1 className="text-4xl font-extrabold">Esta página no existe</h1>
+      <h1 className="text-4xl font-semibold">Esta página no existe</h1>
       <Link to="/" className="mt-4 inline-block font-semibold underline">
         Volver a la cartelera
       </Link>

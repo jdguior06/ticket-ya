@@ -1,15 +1,16 @@
-import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router';
+import { Link, Navigate, Outlet, useLocation } from 'react-router';
 import { homeFor, useAuth } from '../lib/auth';
 import type { Role } from '../lib/types';
+import { buttonClass } from './ui';
 
 function Logo() {
   return (
-    <Link to="/" className="flex items-center gap-1.5 sm:gap-2" aria-label="EntradasYa, ir a la cartelera">
-      <svg viewBox="0 0 64 64" className="size-7 min-[380px]:size-8" aria-hidden="true">
+    <Link to="/" className="flex items-center gap-2" aria-label="EntradasYa, ir a la cartelera">
+      <svg viewBox="0 0 64 64" className="size-7" aria-hidden="true">
         <path fill="currentColor" d="M8 14h48v12a6 6 0 0 0 0 12v12H8V38a6 6 0 0 0 0-12z" />
         <path stroke="var(--color-ambar)" strokeWidth="3" strokeDasharray="3 4" d="M40 16v32" />
       </svg>
-      <span className="font-display text-lg font-extrabold tracking-tight min-[380px]:text-xl">EntradasYa</span>
+      <span className="font-display text-lg font-semibold tracking-tight">EntradasYa</span>
     </Link>
   );
 }
@@ -29,74 +30,96 @@ const LINKS: Record<Role | 'GUEST', { to: string; label: string }[]> = {
   DOORMAN: [{ to: '/portero', label: 'Control de ingreso' }],
 };
 
+const ROLE_LABEL: Record<Role, string> = { CUSTOMER: 'Cliente', ORGANIZER: 'Organizador', DOORMAN: 'Portero' };
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join('');
+}
+
 export function Layout() {
   const { user, logout } = useAuth();
   const links = LINKS[user?.role ?? 'GUEST'];
+  const { pathname } = useLocation();
+  // Activa en su página y en sus subpáginas (/organizador/eventos/...), sin que /organizador
+  // quede activa en /organizador/personal, que tiene su propio enlace.
+  const isActive = (to: string) =>
+    to === '/'
+      ? pathname === '/' || pathname.startsWith('/eventos/')
+      : pathname === to || (pathname.startsWith(`${to}/`) && !links.some((l) => l.to !== to && l.to.startsWith(`${to}/`) && pathname.startsWith(l.to)));
+  const navClass = (desktop: boolean, to: string) => {
+    const active = isActive(to);
+    return desktop
+        ? `relative rounded-lg px-3 py-2 text-[0.95rem] font-medium transition-colors ${active ? 'text-tinta' : 'text-tinta-suave hover:text-tinta'}`
+        : `shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium ${active ? 'bg-tinta text-white' : 'text-tinta-suave'}`;
+  };
 
   return (
-    <div className="min-h-dvh">
-      <header className="sticky top-0 z-20 border-b border-linea bg-papel/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-3 min-[380px]:px-4 sm:gap-6 sm:px-6">
+    <div className="flex min-h-dvh flex-col">
+      <header className="sticky top-0 z-20 border-b border-linea bg-white/85 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:gap-8 sm:px-6">
           <Logo />
-          <nav className="hidden gap-1 sm:flex" aria-label="Principal">
+          <nav className="hidden h-full items-center gap-1 sm:flex" aria-label="Principal">
             {links.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                end
-                className={({ isActive }) =>
-                  `rounded-full px-3 py-1.5 text-[0.95rem] font-medium ${isActive ? 'bg-tinta text-white' : 'text-tinta-suave hover:text-tinta'}`
-                }
-              >
+              <Link key={l.to} to={l.to} className={navClass(true, l.to)} aria-current={isActive(l.to) ? 'page' : undefined}>
                 {l.label}
-              </NavLink>
+                {isActive(l.to) && <span className="absolute inset-x-3 -bottom-[13px] h-0.5 rounded-full bg-tinta" aria-hidden="true" />}
+              </Link>
             ))}
           </nav>
-          <div className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-sm sm:gap-3 sm:text-[0.95rem]">
+          <div className="ml-auto flex shrink-0 items-center gap-2 text-[0.95rem]">
             {user ? (
               <>
-                <span className="hidden text-tinta-suave md:inline">{user.name}</span>
-                <button onClick={logout} className="rounded-full px-3 py-1.5 font-medium text-tinta hover:bg-tinta/5">
+                <span className="hidden items-center gap-2.5 md:flex">
+                  <span className="grid size-8 place-items-center rounded-full bg-niebla text-xs font-semibold text-tinta" aria-hidden="true">
+                    {initials(user.name)}
+                  </span>
+                  <span className="leading-tight">
+                    <span className="block text-sm font-medium">{user.name}</span>
+                    <span className="block text-xs text-tinta-suave">{ROLE_LABEL[user.role]}</span>
+                  </span>
+                </span>
+                <button onClick={logout} className={buttonClass('ghost', 'sm', 'md:ml-2')}>
                   Salir
                 </button>
               </>
             ) : (
               <>
-                <Link to="/login" className="rounded-full px-2 py-1.5 font-medium hover:bg-tinta/5 sm:px-3">
-                  <span className="sm:hidden">Entrar</span>
-                  <span className="hidden sm:inline">Iniciar sesión</span>
+                <Link to="/login" className="rounded-lg px-3 py-2 font-medium text-tinta-suave hover:text-tinta">
+                  Entrar
                 </Link>
-                <Link to="/registro" className="rounded-full bg-tinta px-3 py-1.5 font-semibold text-white hover:bg-tinta/90 sm:px-4">
-                  <span className="sm:hidden">Registrarme</span>
-                  <span className="hidden sm:inline">Crear cuenta</span>
+                <Link to="/registro" className={buttonClass('secondary', 'sm')}>
+                  Crear cuenta
                 </Link>
               </>
             )}
           </div>
         </div>
-        {/* Navegación móvil */}
-        <nav className="flex gap-1 overflow-x-auto px-4 pb-2 sm:hidden" aria-label="Principal móvil">
+        {/* Navegación móvil (solo si hay más de un destino) */}
+        {links.length > 1 && (
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-2 sm:hidden" aria-label="Principal móvil">
           {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end
-              className={({ isActive }) =>
-                `shrink-0 rounded-full px-3 py-1 text-sm font-medium ${isActive ? 'bg-tinta text-white' : 'text-tinta-suave ring-1 ring-linea'}`
-              }
-            >
+            <Link key={l.to} to={l.to} className={navClass(false, l.to)} aria-current={isActive(l.to) ? 'page' : undefined}>
               {l.label}
-            </NavLink>
+            </Link>
           ))}
         </nav>
+        )}
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
         <Outlet />
       </main>
-      <footer className="mx-auto max-w-6xl px-4 pb-8 text-sm text-tinta-suave sm:px-6">
-        <Link to="/estado" className="hover:text-tinta hover:underline">
-          Estado del sistema
-        </Link>
+      <footer className="border-t border-linea">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-tinta-suave sm:px-6">
+          <span>EntradasYa, venta de entradas con microservicios</span>
+          <Link to="/estado" className="hover:text-tinta hover:underline">
+            Estado del sistema
+          </Link>
+        </div>
       </footer>
     </div>
   );

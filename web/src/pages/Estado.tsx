@@ -96,17 +96,22 @@ export function Estado() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageTitle>Estado del sistema</PageTitle>
-      <p className="-mt-3 mb-8 text-tinta-suave" aria-live="polite">
-        {loading
-          ? 'Consultando los servicios…'
-          : down === 0
-            ? 'Los 7 servicios funcionan.'
-            : `${down} de 7 servicios con problemas. El resto sigue funcionando.`}
-        {checkedAt && ` Se actualiza cada ${REFRESH_MS / 1000} segundos.`}
-      </p>
+      <PageTitle
+        subtitle={
+          <span aria-live="polite">
+            {loading
+              ? 'Consultando los servicios…'
+              : down === 0
+                ? 'Los 7 servicios funcionan.'
+                : `${down} de 7 servicios con problemas. El resto sigue funcionando.`}
+            {checkedAt && ` Se actualiza cada ${REFRESH_MS / 1000} segundos.`}
+          </span>
+        }
+      >
+        Estado del sistema
+      </PageTitle>
 
-      <ul className="divide-y divide-linea overflow-hidden rounded-2xl bg-white ring-1 ring-linea">
+      <ul className="divide-y divide-linea overflow-hidden rounded-2xl border border-linea bg-white shadow-tarjeta">
         {SERVICES.map((s) => {
           const st = states[s.name];
           return (

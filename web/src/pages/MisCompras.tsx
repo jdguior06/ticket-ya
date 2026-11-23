@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
-import { Alert, Badge, Button, Empty, Loading, PageTitle } from '../components/ui';
+import { Alert, Badge, Button, ButtonLink, Empty, Loading, PageTitle } from '../components/ui';
 import { api } from '../lib/api';
-import { bs, longDate } from '../lib/format';
+import { bs, shortDate } from '../lib/format';
 import { errorText, FAILURE_TEXT, ORDER_STATUS } from '../lib/messages';
 import type { Order } from '../lib/types';
 
@@ -39,18 +38,16 @@ export function MisCompras() {
 
   return (
     <>
-      <PageTitle>Mis compras</PageTitle>
+      <PageTitle subtitle="Tus pedidos, con su estado de pago y sus entradas.">Mis compras</PageTitle>
       {error && <Alert>{error}</Alert>}
       {!orders && !error && <Loading />}
       {orders && orders.length === 0 && (
-        <Empty title="Todavía no compraste nada">
-          <Link to="/" className="font-semibold text-tinta underline">
-            Ver la cartelera
-          </Link>
+        <Empty title="Todavía no compraste nada" action={<ButtonLink to="/" variant="secondary">Ver la cartelera</ButtonLink>}>
+          Cuando compres, aquí verás cada pedido y su estado.
         </Empty>
       )}
       {orders && orders.length > 0 && (
-        <ul className="divide-y divide-linea overflow-hidden rounded-2xl bg-white ring-1 ring-linea">
+        <ul className="divide-y divide-linea overflow-hidden rounded-2xl border border-linea bg-white shadow-tarjeta">
           {orders.map((o) => {
             const st = ORDER_STATUS[o.status];
             const needsTickets = o.status === 'PAID' && o.ticketsStatus !== 'ISSUED';
@@ -58,13 +55,13 @@ export function MisCompras() {
               <li key={o.id} className="grid gap-3 px-5 py-5 sm:grid-cols-[1fr_auto] sm:items-center sm:px-6">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="truncate text-lg font-bold">{o.eventName ?? 'Evento'}</h2>
+                    <h2 className="truncate text-lg">{o.eventName ?? 'Evento'}</h2>
                     <Badge tone={st.tone}>{st.label}</Badge>
                   </div>
                   <p className="mt-1 text-tinta-suave">
                     {o.quantity} {o.quantity === 1 ? 'entrada' : 'entradas'}
                     {o.sectorName ? `, ${o.sectorName}` : ''}
-                    {o.eventStartsAt ? `. ${longDate(o.eventStartsAt)}` : ''}
+                    {o.eventStartsAt ? `. ${shortDate(o.eventStartsAt)}` : ''}
                   </p>
                   {o.failureCode && o.status !== 'PAID' && (
                     <p className="mt-1 text-sm text-tinta-suave">{FAILURE_TEXT[o.failureCode] ?? o.failureCode}</p>
@@ -76,14 +73,14 @@ export function MisCompras() {
                   {retryError[o.id] && <p className="mt-1 text-sm text-error">{retryError[o.id]}</p>}
                 </div>
                 <div className="flex items-center gap-4 sm:justify-end">
-                  <span className="font-display text-xl font-bold">{bs(o.totalCents)}</span>
+                  <span className={`text-lg font-semibold tabular-nums ${o.status === 'REJECTED' || o.status === 'CANCELLED' ? 'text-tinta-suave line-through decoration-1' : ''}`}>{bs(o.totalCents)}</span>
                   {o.status === 'PAID' && o.ticketsStatus === 'ISSUED' && (
-                    <Link to={`/mis-entradas?orden=${o.id}`} className="rounded-full px-4 py-2 text-sm font-semibold ring-1 ring-linea hover:bg-tinta/5">
+                    <ButtonLink to={`/mis-entradas?orden=${o.id}`} variant="ghost" size="sm">
                       Ver entradas
-                    </Link>
+                    </ButtonLink>
                   )}
                   {needsTickets && (
-                    <Button className="px-4 py-2 text-sm" loading={retrying === o.id} onClick={() => retry(o)}>
+                    <Button size="sm" loading={retrying === o.id} onClick={() => retry(o)}>
                       Generar entradas
                     </Button>
                   )}

@@ -77,6 +77,10 @@ Con auth y events levantados: `node scripts/seed-demo.mjs`. Crea los eventos pub
 
 **Estado del sistema:** https://localhost:5173/estado muestra los 7 servicios en verde o rojo y qué deja de funcionar cuando uno cae. En la demo puedes apagar uno (por ejemplo payments) y mostrar que el resto sigue.
 
+## Repositorios y CI
+
+Cada servicio y la web tienen su propio repositorio con su pipeline de GitHub Actions (ramas `main` y `development`; cada push a `development` compila, prueba y genera un artifact `.tar.gz`). Los 8 pipelines y el script que crea los repos están explicados en [`ci/LEEME.md`](ci/LEEME.md).
+
 ## Usuarios de prueba
 
 | Rol | Cómo se crea |

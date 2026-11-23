@@ -37,7 +37,17 @@ export class NotificationsService {
       throw new AppException(400, 'VALIDATION_ERROR', 'La fecha del evento no es válida');
     }
 
-    const email = orderConfirmedEmail({ ...order, eventStartsAt });
+    const email = orderConfirmedEmail({
+      customerName: order.customerName,
+      orderId: order.orderId,
+      eventName: order.eventName,
+      venue: order.venue,
+      eventStartsAt,
+      sectorName: order.sectorName,
+      quantity: order.quantity,
+      totalCents: order.totalCents,
+      ticketsUrl: order.ticketsUrl,
+    });
     const messageId = await this.send(order.to, email, `la orden ${order.orderId}`);
     return { status: 'SENT', messageId };
   }

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { ImagePicker, type ImageChange } from '../../components/ImagePicker';
-import { Alert, Badge, Button, Field, Loading } from '../../components/ui';
+import { Alert, BackLink, Badge, Button, Field, Loading } from '../../components/ui';
 import { api } from '../../lib/api';
 import { bsToCents, fromLocalInput, toLocalInput } from '../../lib/format';
 import { errorText } from '../../lib/messages';
@@ -150,13 +150,19 @@ export function EventoForm() {
 
   if (loading) return <Loading />;
 
+  const sectionHead = (title: string, help: string) => (
+    <div className="lg:pt-1">
+      <h2 className="text-lg">{title}</h2>
+      <p className="mt-1 text-sm text-tinta-suave">{help}</p>
+    </div>
+  );
+  const panel = 'rounded-2xl border border-linea bg-white p-5 shadow-tarjeta sm:p-6';
+
   return (
-    <form onSubmit={save} className="mx-auto max-w-3xl">
-      <Link to="/organizador" className="text-tinta-suave hover:text-tinta">
-        Volver a mis eventos
-      </Link>
-      <div className="mt-2 mb-8 flex flex-wrap items-center gap-3">
-        <h1 className="text-3xl font-extrabold sm:text-4xl">{isNew ? 'Nuevo evento' : form.name || 'Editar evento'}</h1>
+    <form onSubmit={save} className="mx-auto max-w-5xl">
+      <BackLink to="/organizador">Mis eventos</BackLink>
+      <div className="mb-10 flex flex-wrap items-center gap-3">
+        <h1 className="text-3xl sm:text-[2.5rem]">{isNew ? 'Nuevo evento' : form.name || 'Editar evento'}</h1>
         {event && (
           <Badge tone={event.status === 'PUBLISHED' ? 'ok' : event.status === 'DRAFT' ? 'warn' : 'muted'}>
             {{ DRAFT: 'Borrador', PUBLISHED: 'Publicado', CANCELLED: 'Cancelado' }[event.status]}
@@ -164,61 +170,77 @@ export function EventoForm() {
         )}
       </div>
 
-      <fieldset disabled={readOnly} className="space-y-8">
-        <section className="grid gap-4 rounded-2xl bg-white p-6 ring-1 ring-linea sm:grid-cols-2">
-          <Field className="sm:col-span-2" label="Nombre del evento" required minLength={3} maxLength={150} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <Field label="Lugar" required minLength={2} value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} placeholder="Estadio Tahuichi" />
-          <Field label="Fecha y hora" type="datetime-local" required value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} hint="Hora de Bolivia." />
-          <ImagePicker currentUrl={event?.imageUrl ?? null} change={image} onChange={setImage} disabled={readOnly} />
-          <label className="block sm:col-span-2">
-            <span className="mb-1.5 block text-sm font-semibold">Descripción</span>
-            <textarea
-              rows={4}
-              maxLength={2000}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full rounded-xl border border-linea px-3.5 py-2.5 focus:border-tinta focus:outline-none"
-            />
-          </label>
-        </section>
+      <fieldset disabled={readOnly} className="space-y-10">
+        <div className="grid gap-4 lg:grid-cols-[16rem_1fr] lg:gap-10">
+          {sectionHead('Datos del evento', 'Lo que verá el público en la cartelera y en el detalle.')}
+          <section className={`grid gap-4 sm:grid-cols-2 ${panel}`}>
+            <Field className="sm:col-span-2" label="Nombre del evento" required minLength={3} maxLength={150} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Field label="Lugar" required minLength={2} value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} placeholder="Estadio Tahuichi" />
+            <Field label="Fecha y hora" type="datetime-local" required value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} hint="Hora de Bolivia." />
+            <label className="block sm:col-span-2">
+              <span className="mb-1.5 block text-sm font-medium">Descripción</span>
+              <textarea
+                rows={4}
+                maxLength={2000}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="w-full rounded-xl border border-linea bg-white px-3.5 py-2.5 hover:border-tinta/25 focus:border-tinta focus:outline-none"
+              />
+            </label>
+          </section>
+        </div>
 
-        <section>
-          <h2 className="text-xl font-bold">Sectores</h2>
-          <p className="mb-4 text-tinta-suave">Cada sector tiene su precio y su cupo. No puedes bajar el cupo por debajo de lo vendido.</p>
-          <div className="space-y-3">
-            {sectors.map((s, i) => (
-              <div key={s.id ?? `new-${i}`} className="grid grid-cols-2 gap-3 rounded-2xl bg-white p-4 ring-1 ring-linea sm:grid-cols-[1.4fr_1fr_1fr_auto] sm:items-end">
-                <Field className="col-span-2 sm:col-span-1" label="Sector" required value={s.name} onChange={(e) => updateSector(i, { name: e.target.value })} placeholder="General, VIP…" />
-                <Field label="Precio (Bs)" required inputMode="decimal" pattern="\d+([.,]\d{1,2})?" value={s.price} onChange={(e) => updateSector(i, { price: e.target.value })} />
-                <Field
-                  label="Cupo"
-                  required
-                  type="number"
-                  min={Math.max(1, s.sold)}
-                  value={s.capacity}
-                  onChange={(e) => updateSector(i, { capacity: e.target.value })}
-                  hint={s.sold ? `${s.sold} vendidas` : undefined}
-                />
-                <button
-                  type="button"
-                  disabled={sectors.length === 1 || s.sold > 0}
-                  onClick={() => setSectors((list) => list.filter((_, j) => j !== i))}
-                  className="col-span-2 rounded-full px-3 py-2.5 text-sm font-semibold text-error hover:bg-error/5 disabled:invisible sm:col-span-1"
-                >
-                  Quitar
-                </button>
-              </div>
-            ))}
-          </div>
-          <Button type="button" variant="ghost" className="mt-3" onClick={() => setSectors((l) => [...l, emptySector()])} disabled={sectors.length >= 10}>
-            Agregar sector
-          </Button>
-        </section>
+        <div className="grid gap-4 lg:grid-cols-[16rem_1fr] lg:gap-10">
+          {sectionHead('Foto', 'Una imagen horizontal se ve mejor. Es opcional: sin foto, la tarjeta muestra la fecha.')}
+          <section className={panel}>
+            <ImagePicker currentUrl={event?.imageUrl ?? null} change={image} onChange={setImage} disabled={readOnly} />
+          </section>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[16rem_1fr] lg:gap-10">
+          {sectionHead('Sectores', 'Cada sector tiene su precio y su cupo. El cupo no puede quedar por debajo de lo vendido.')}
+          <section className={panel}>
+            <div className="divide-y divide-linea">
+              {sectors.map((s, i) => (
+                <div key={s.id ?? `new-${i}`} className="grid grid-cols-2 gap-3 py-4 first:pt-0 sm:grid-cols-[1.4fr_1fr_1fr_auto] sm:items-start">
+                  <Field className="col-span-2 sm:col-span-1" label="Sector" required value={s.name} onChange={(e) => updateSector(i, { name: e.target.value })} placeholder="General, VIP…" />
+                  <Field label="Precio (Bs)" required inputMode="decimal" pattern="\d+([.,]\d{1,2})?" value={s.price} onChange={(e) => updateSector(i, { price: e.target.value })} />
+                  <Field
+                    label="Cupo"
+                    required
+                    type="number"
+                    min={Math.max(1, s.sold)}
+                    value={s.capacity}
+                    onChange={(e) => updateSector(i, { capacity: e.target.value })}
+                    hint={s.sold ? `${s.sold} vendidas` : undefined}
+                  />
+                  <button
+                    type="button"
+                    disabled={sectors.length === 1 || s.sold > 0}
+                    onClick={() => setSectors((list) => list.filter((_, j) => j !== i))}
+                    className="col-span-2 h-11 rounded-xl px-3 text-sm font-semibold text-error hover:bg-error/5 disabled:invisible sm:col-span-1 sm:mt-[1.625rem]"
+                    aria-label={`Quitar el sector ${s.name || i + 1}`}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => setSectors((l) => [...l, emptySector()])} disabled={sectors.length >= 10}>
+              Agregar sector
+            </Button>
+          </section>
+        </div>
       </fieldset>
 
-      <div className="mt-8 space-y-4">
-        {error && <Alert>{error}</Alert>}
-        {saved && <Alert tone="ok">{saved}</Alert>}
+      {/* Barra de acciones: queda pegada abajo mientras se edita. */}
+      <div className="sticky bottom-0 z-10 -mx-4 mt-10 border-t border-linea bg-papel/95 px-4 py-4 backdrop-blur-md sm:-mx-6 sm:px-6">
+        {(error || saved) && (
+          <div className="mb-3">
+            {error && <Alert>{error}</Alert>}
+            {saved && !error && <Alert tone="ok">{saved}</Alert>}
+          </div>
+        )}
         <div className="flex flex-wrap gap-3">
           {!readOnly && (
             <Button type="submit" variant="secondary" loading={saving === 'save'}>
